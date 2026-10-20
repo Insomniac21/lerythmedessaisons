@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nos cailles · Le Rythme des Saisons</title>
+<meta name="description" content="Les quatre cailles japonaises de la fermette Le Rythme des Saisons, nées vers le 20 août 2026 et élevées à la maison. Rencontrez Mathilda.">
+<link rel="canonical" href="https://lerythmedessaisons.ca/cailles/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="fr_CA">
+<meta property="og:title" content="Nos cailles · Le Rythme des Saisons">
+<meta property="og:description" content="Quatre cailles japonaises, nées vers le 20 août 2026, élevées à la maison près de Saint-Jean-sur-Richelieu.">
+<meta property="og:url" content="https://lerythmedessaisons.ca/cailles/">
+<meta property="og:image" content="https://lerythmedessaisons.ca/assets/og-image.jpg">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#7d9471">
+<link rel="icon" href="../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<header class="site-header">
+  <div class="wrap nav-bar">
+    <a class="brand" href="../index.html"><img src="../assets/logo-256.webp" alt="" width="44" height="44"><span>Le Rythme des Saisons</span></a>
+    <button class="nav-toggle" aria-expanded="false" aria-controls="menu" aria-label="Ouvrir le menu"><span></span><span></span><span></span></button>
+    <nav id="menu" aria-label="Navigation principale">
+      <a href="../index.html#a-propos">À propos</a>
+      <a href="../index.html#animaux">Nos animaux</a>
+      <a href="index.html" aria-current="page">Nos cailles</a>
+      <a href="../index.html#videos">Vidéos</a>
+      <a href="../index.html#produits">Produits</a>
+      <a href="../index.html#contact">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+  <section class="section">
+    <div class="wrap narrow">
+      <h1>Nos cailles</h1>
+      <p class="lead">Quatre cailles japonaises, nées vers le 20 août 2026, élevées à la maison.</p>
+      <p>Elles grandissent avec nous, près de Saint-Jean-sur-Richelieu. Les fiches se remplissent au fil des saisons.</p>
+    </div>
+    <div class="wrap">
+      <!--
+        AJOUTER UNE CAILLE :
+        1. Copiez le bloc <article class="card">…</article> de Mathilda, juste en dessous.
+        2. Changez la photo (assets/cailles/prenom.jpg, environ 800 px de large), le nom, la courte phrase et le lien (prenom.html).
+        3. Copiez cailles/mathilda.html vers cailles/prenom.html, puis remplacez le texte. Laissez « à venir » ce qui n'est pas encore connu — n'inventez pas de faits.
+        4. Quand les quatre fiches sont en ligne, retirez la note « D'autres fiches arrivent bientôt ».
+      -->
+      <div class="cards-quail">
+        <article class="card">
+          <a class="card-hit" href="mathilda.html">
+            <img src="../assets/cailles/mathilda.jpg" width="800" height="1422" alt="Mathilda, caille japonaise, en gros plan sur une litière de copeaux de bois">
+            <div class="card-body">
+              <h2 class="quail-name">Mathilda</h2>
+              <p>L'aînée de la couvée, curieuse et douce.</p>
+            </div>
+          </a>
+        </article>
+      </div>
+      <p class="quail-soon">D'autres fiches arrivent bientôt.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <img src="../assets/logo-256.webp" alt="" width="56" height="56" loading="lazy">
+    <p>© 2026 Le Rythme des Saisons · <a href="https://www.youtube.com/@lerythmedessaisons" target="_blank" rel="noopener">YouTube</a></p>
+  </div>
+</footer>
+
+<script>
+  const t=document.querySelector('.nav-toggle'),m=document.getElementById('menu');
+  t.addEventListener('click',()=>{const o=t.getAttribute('aria-expanded')==='true';t.setAttribute('aria-expanded',!o);m.classList.toggle('open',!o);});
+  m.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{t.setAttribute('aria-expanded','false');m.classList.remove('open');}));
+</script>
+</body>
+</html>

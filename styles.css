@@ -81,7 +81,12 @@ h3{font-size:1.65rem}
 .quail-soon{margin:1.75rem 0 0;text-align:center;font-family:var(--serif);font-style:italic;font-size:1.35rem;color:var(--sage-d)}
 .back-link{margin:0 0 1.1rem;font-weight:700}
 .quail-photo{max-width:440px;margin:0 auto 1.6rem}
-.quail-photo img{width:100%;height:auto;border-radius:18px;border:1px solid #eadfc4;box-shadow:0 4px 18px rgba(80,60,20,.08);background:#fffdf7}
+.quail-photo img,.quail-photo video{width:100%;height:auto;border-radius:18px;border:1px solid #eadfc4;box-shadow:0 4px 18px rgba(80,60,20,.08);background:#fffdf7}
+.quail-photo .quail-still{display:none}
+@media (prefers-reduced-motion:reduce){
+  .quail-photo video{display:none}
+  .quail-photo .quail-still{display:block}
+}
 .fact-box{max-width:640px;margin:0 auto 1.6rem;background:#fffdf7;border:1px solid #eadfc4;border-radius:16px;padding:.4rem 1.2rem}
 .fact-box dl{margin:0}
 .fact-box div{display:grid;grid-template-columns:7.2rem 1fr;gap:.15rem .8rem;padding:.7rem 0;border-bottom:1px dashed #eadfc4}

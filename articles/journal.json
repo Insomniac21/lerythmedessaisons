@@ -1,6 +1,14 @@
 {
   "articles": [
     {
+      "slug": "2026-11-21-les-cailles-partie-2",
+      "title": "Les cailles partie 2",
+      "date": "2026-11-21",
+      "publishedAt": "2026-11-21T23:40:07.607Z",
+      "excerpt": "Il y a beaucoup de couleurs d'oeufs de caille : bleu, turquoise, brun et noir.",
+      "image": "assets/articles/2026-11-21-les-cailles-partie-2.jpg"
+    },
+    {
       "slug": "2026-11-21-les-cailles-partie-1",
       "title": "Les cailles partie 1",
       "date": "2026-11-21",

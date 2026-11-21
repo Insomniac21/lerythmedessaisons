@@ -1,3 +1,12 @@
 {
-  "articles": []
+  "articles": [
+    {
+      "slug": "2026-11-21-la-premiere-portee-des-cailles",
+      "title": "La première portée des cailles",
+      "date": "2026-11-21",
+      "publishedAt": "2026-11-21T21:00:36.518Z",
+      "excerpt": "Dans la première portée des cailles il y a Mathilda la première, Ron le plus vite, Jannie est la plus calme et Anna est la plus nerveuse.",
+      "image": null
+    }
+  ]
 }

@@ -1,0 +1,17 @@
+name = "journal-zackary"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# Origine exacte de la page (sans chemin, sans slash final).
+# Si le site s'ouvre aussi avec www, ajoutez-la après une virgule.
+[vars]
+GITHUB_OWNER = "Insomniac21"
+GITHUB_REPO = "lerythmedessaisons"
+GITHUB_BRANCH = "master"
+ALLOWED_ORIGINS = "https://lerythmedessaisons.ca"
+
+# Remplacez l'id par celui affiché par : npx wrangler kv namespace create SESSIONS
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "00000000000000000000000000000000"

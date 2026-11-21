@@ -14,4 +14,4 @@ ALLOWED_ORIGINS = "https://lerythmedessaisons.ca"
 # Remplacez l'id par celui affiché par : npx wrangler kv namespace create SESSIONS
 [[kv_namespaces]]
 binding = "SESSIONS"
-id = "00000000000000000000000000000000"
+id = "cdce80a7ec264fb2bd399d180e326c5f"

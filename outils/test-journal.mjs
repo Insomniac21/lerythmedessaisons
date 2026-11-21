@@ -166,7 +166,7 @@ test("la page d'accueil, le menu et le coin d'écriture sont branchés", () => {
   assert.match(editor, /id="photo"/);
   assert.match(editor, /Publier mon article/);
   assert.doesNotMatch(editor, /name="(?:ecole|adresse|famille|ville|nom)"/);
-  assert.match(read("ecrire/config.js"), /brokerUrl:\s*""/);
+  assert.match(read("ecrire/config.js"), /brokerUrl:\s*"https:\/\/journal-zackary\.lerythmedessaisons\.workers\.dev"/);
   assert.equal(ARTICLE_SLUG.test("2026-11-21-bonjour"), true);
   assert.equal(ARTICLE_SLUG.test("../index"), false);
   assert.throws(() => assertWritable("index.html"), /chemin/);

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Écrire un article · Le journal de Zackary</title>
+<meta name="description" content="Le coin de Zackary pour écrire un article de la fermette.">
+<meta name="theme-color" content="#7d9471">
+<link rel="icon" href="../favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+<a class="skip" href="#contenu">Aller au contenu</a>
+
+<header class="site-header">
+  <div class="wrap nav-bar">
+    <a class="brand" href="../index.html"><img src="../assets/logo-256.webp" alt="" width="44" height="44"><span>Le Rythme des Saisons</span></a>
+    <button class="nav-toggle" aria-expanded="false" aria-controls="menu" aria-label="Ouvrir le menu"><span></span><span></span><span></span></button>
+    <nav id="menu" aria-label="Navigation principale">
+      <a href="../index.html#a-propos">À propos</a>
+      <a href="../index.html#animaux">Nos animaux</a>
+      <a href="../cailles/index.html">Nos cailles</a>
+      <a href="../articles/index.html">Le journal</a>
+      <a href="../index.html#videos">Vidéos</a>
+      <a href="../index.html#produits">Produits</a>
+      <a href="../index.html#contact">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+  <section class="section editor-page">
+    <div class="wrap narrow">
+      <p class="back-link"><a href="../articles/index.html">← Le journal de Zackary</a></p>
+      <h1>Écrire un article</h1>
+      <p id="attente">Un instant…</p>
+      <noscript><p class="editor-message">Pour écrire, il faut allumer JavaScript dans le navigateur.</p></noscript>
+
+      <div id="panel-setup" hidden>
+        <p class="lead">Le bouton pour publier n'est pas encore allumé.</p>
+        <p>Demande à Papa. Quand ce sera prêt, tu pourras écrire tes histoires ici.</p>
+      </div>
+
+      <div id="panel-login" hidden>
+        <p class="lead">Ici, c'est ton coin, Zackary.</p>
+        <form class="contact-form editor-form" id="form-login">
+          <label for="mot">Le mot secret</label>
+          <div class="secret-row">
+            <input id="mot" name="mot" type="password" autocomplete="current-password" maxlength="200" required>
+            <button class="btn btn-ghost" type="button" id="voir-mot">Voir le mot</button>
+          </div>
+          <p id="message-login" class="editor-message" role="alert" hidden></p>
+          <button class="btn btn-primary btn-xl" type="submit">Entrer</button>
+        </form>
+      </div>
+
+      <div id="panel-editor" hidden>
+        <p class="editor-note">N'écris pas ton nom de famille, le nom de ton école, ni l'endroit où tu habites.</p>
+        <form class="contact-form editor-form" id="form-article">
+          <label for="titre">Le titre</label>
+          <input id="titre" name="titre" type="text" maxlength="80" required placeholder="Exemple : La course de Ron" autocomplete="off">
+          <label for="texte">Ton histoire</label>
+          <textarea id="texte" name="texte" rows="10" maxlength="8000" required placeholder="Raconte ce que tu as vu aujourd'hui…"></textarea>
+          <label for="photo">Une photo, si tu veux</label>
+          <input id="photo" name="photo" type="file" accept="image/*" hidden>
+          <label class="btn btn-ghost btn-xl" for="photo">Choisir une photo</label>
+          <p class="small">Tu peux publier sans photo. Elle est réduite pour le site.</p>
+          <img id="apercu-photo" class="editor-photo" alt="" hidden>
+          <button class="btn btn-quiet" type="button" id="enlever-photo" hidden>Enlever la photo</button>
+          <p id="photo-deja" class="small" hidden>Une photo est déjà avec cet article.</p>
+          <label class="check-line" id="ligne-retirer-photo" hidden>
+            <input id="retirer-photo" type="checkbox"> Enlever la photo déjà publiée
+          </label>
+          <p id="message-editeur" class="editor-message" role="alert" hidden></p>
+          <button class="btn btn-primary btn-xl" id="publier" type="submit">Publier mon article</button>
+        </form>
+        <h2 class="editor-sous-titre">Mes articles</h2>
+        <p id="aucun-article" class="journal-empty">Tu n'as pas encore publié d'article.</p>
+        <ul class="journal" id="mes-articles"></ul>
+        <p class="center"><button class="btn btn-ghost" type="button" id="sortir">Sortir</button></p>
+      </div>
+
+      <div id="panel-succes" hidden>
+        <p class="lead" id="succes-titre">C'est publié !</p>
+        <p>Ton article sera visible sur le site dans une minute ou deux.</p>
+        <p class="center"><a class="btn btn-primary btn-xl" id="lien-article" href="../articles/index.html">Voir mon article</a></p>
+        <p class="center"><button class="btn btn-ghost" type="button" id="encore">Écrire un autre article</button></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <img src="../assets/logo-256.webp" alt="" width="56" height="56" loading="lazy">
+    <p>© 2026 Le Rythme des Saisons · <a href="https://www.youtube.com/@lerythmedessaisons" target="_blank" rel="noopener">YouTube</a></p>
+  </div>
+</footer>
+
+<script>
+  const t=document.querySelector('.nav-toggle'),m=document.getElementById('menu');
+  t.addEventListener('click',()=>{const o=t.getAttribute('aria-expanded')==='true';t.setAttribute('aria-expanded',!o);m.classList.toggle('open',!o);});
+  m.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{t.setAttribute('aria-expanded','false');m.classList.remove('open');}));
+</script>
+<script type="module" src="editeur.js"></script>
+</body>
+</html>

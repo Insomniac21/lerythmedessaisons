@@ -42,6 +42,7 @@ const retirerPhoto = document.getElementById("retirer-photo");
 const boutonPublier = document.getElementById("publier");
 const liste = document.getElementById("mes-articles");
 const aucun = document.getElementById("aucun-article");
+const totalVues = document.getElementById("total-vues");
 const sortir = document.getElementById("sortir");
 const lienArticle = document.getElementById("lien-article");
 const succesTitre = document.getElementById("succes-titre");
@@ -216,9 +217,22 @@ async function fileToJpegBase64(file) {
   return { base64: btoa(binary), blob };
 }
 
-function renderArticles(articles) {
+function phraseVues(count) {
+  const n = Math.max(0, Math.round(Number(count) || 0));
+  return n === 1 ? "1 vue" : `${n} vues`;
+}
+
+function phraseFenetre(days) {
+  const n = Math.max(1, Math.round(Number(days) || 90));
+  if (n === 1) return "dans la dernière journée";
+  return `dans les ${n} derniers jours`;
+}
+
+function renderArticles(articles, stats) {
   liste.replaceChildren();
   aucun.hidden = articles.length > 0;
+  const available = Boolean(stats && stats.ok && stats.articles);
+  let total = 0;
   for (const article of articles) {
     const item = document.createElement("li");
     const strong = document.createElement("strong");
@@ -239,14 +253,34 @@ function renderArticles(articles) {
     remove.textContent = "Retirer";
     remove.addEventListener("click", () => removeArticle(article));
     actions.append(edit, remove);
-    item.append(strong, date, actions);
+    item.append(strong, date);
+    if (available) {
+      const views = Math.max(0, Math.round(Number(stats.articles[article.slug]?.views) || 0));
+      total += views;
+      const vues = document.createElement("p");
+      vues.className = "editor-vues";
+      vues.textContent = `👀 ${phraseVues(views)}`;
+      item.append(vues);
+    }
+    item.append(actions);
     liste.append(item);
+  }
+  if (!totalVues) return;
+  if (available && articles.length > 0) {
+    totalVues.hidden = false;
+    totalVues.textContent = `En tout, ${phraseVues(total)} ${phraseFenetre(stats.windowDays)}.`;
+  } else {
+    totalVues.hidden = true;
+    totalVues.textContent = "";
   }
 }
 
 async function loadArticles() {
-  const data = await api("/api/journal");
-  renderArticles(data.articles || []);
+  const [data, stats] = await Promise.all([
+    api("/api/journal"),
+    api("/api/stats").catch(() => ({ ok: false, articles: {} })),
+  ]);
+  renderArticles(data.articles || [], stats);
 }
 
 async function enterEditor() {

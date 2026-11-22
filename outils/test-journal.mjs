@@ -200,6 +200,63 @@ test("les pages publiques ne demandent ni nom de famille, ni école, ni endroit"
   }
 });
 
+test("la page de l'auteur est liée, sans détail privé", () => {
+  function jpegSize(bytes) {
+    const data = Buffer.from(bytes);
+    let offset = 2;
+    while (offset + 9 < data.length) {
+      if (data[offset] !== 0xff) break;
+      const marker = data[offset + 1];
+      if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+        return { height: data.readUInt16BE(offset + 5), width: data.readUInt16BE(offset + 7) };
+      }
+      if (marker === 0xda || marker === 0xd9) break;
+      const length = data.readUInt16BE(offset + 2);
+      if (marker === 0xe1) {
+        const header = data.subarray(offset + 4, offset + 10).toString("latin1");
+        assert.equal(header.startsWith("Exif"), false);
+      }
+      offset += 2 + length;
+    }
+    throw new Error("jpeg");
+  }
+
+  const author = read("articles/auteur.html");
+  assert.match(author, /<title>L'auteur : Zackary · Le journal de Zackary<\/title>/);
+  assert.match(author, /<h1>L'auteur : Zackary<\/h1>/);
+  assert.match(author, /environ 10 ans/);
+  assert.match(author, /Marc-André/);
+  assert.match(author, /cailles/);
+  assert.match(author, /Le Rythme des Saisons est un projet de famille, papa et fils\./);
+  assert.match(author, /— Marc-André/);
+  assert.match(author, /src="\.\.\/assets\/zackary-avatar\.jpg" width="400" height="400" alt="Avatar illustré de Zackary"/);
+  assert.equal(author.split('alt="Avatar illustré de Zackary"').length - 1, 1);
+  assert.doesNotMatch(author, /Saint-Jean|école|ecole|adresse|nom de famille/i);
+  assertBeaconOnce(author, "articles/auteur.html");
+
+  const avatar = readFileSync("assets/zackary-avatar.jpg");
+  assert.ok(avatar.length > 8000 && avatar.length < 150000);
+  assert.equal(avatar[0], 0xff);
+  assert.equal(avatar[1], 0xd8);
+  assert.deepEqual(jpegSize(avatar), { width: 400, height: 400 });
+
+  const byline = /<a href="auteur\.html"><img src="\.\.\/assets\/zackary-avatar\.jpg" alt="" width="40" height="40"><span>Écrit par Zackary<\/span><\/a>/;
+  assert.match(renderListPage([]), /href="auteur\.html">L'auteur : Zackary<\/a>/);
+  assert.match(read("articles/index.html"), /href="auteur\.html">L'auteur : Zackary<\/a>/);
+  assert.match(renderArticlePage({
+    slug: "2099-01-02-histoire-future",
+    title: "Histoire future",
+    body: "Une histoire qui n'existe pas encore.",
+    date: "2099-01-02",
+  }), byline);
+
+  const journal = JSON.parse(read("articles/journal.json"));
+  assert.ok(Array.isArray(journal.articles));
+  for (const entry of journal.articles) {
+    assert.match(read(`articles/${entry.slug}.html`), byline, entry.slug);
+  }
+});
+
 test("la page d'accueil, le menu et le coin d'écriture sont branchés", () => {
   const home = read("index.html");
   const section = home.slice(home.indexOf('id="journal"'), home.indexOf("<!-- 3. NOS ANIMAUX"));

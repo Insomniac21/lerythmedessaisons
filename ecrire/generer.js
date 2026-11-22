@@ -167,7 +167,7 @@ export function renderArticlePage(article) {
     <div class="wrap narrow">
       <p class="back-link"><a href="index.html">← Le journal de Zackary</a></p>
       <h1>${escapeHtml(article.title)}</h1>
-      <p class="journal-byline">Écrit par Zackary · <time datetime="${escapeHtml(article.date)}">${escapeHtml(dateLabel)}</time></p>${figure}
+      <p class="journal-byline"><a href="auteur.html"><img src="../assets/zackary-avatar.jpg" alt="" width="40" height="40"><span>Écrit par Zackary</span></a> · <time datetime="${escapeHtml(article.date)}">${escapeHtml(dateLabel)}</time></p>${figure}
       <div class="journal-body">
 ${textToParagraphs(article.body)}
       </div>
@@ -208,6 +208,7 @@ ${sorted.map((article) => {
       <h1>Le journal de Zackary</h1>
       <p class="lead">Des petites histoires écrites par Zackary, au fil des saisons.</p>
       <p class="center">Les cailles, les cochons d'Inde, et les moments de la fermette.</p>
+      <p class="center"><a href="auteur.html">L'auteur : Zackary</a></p>
     </div>
     <div class="wrap">
 ${cards}

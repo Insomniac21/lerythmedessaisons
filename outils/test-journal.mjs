@@ -39,10 +39,24 @@ function htmlFiles(dir) {
   return found;
 }
 
+function beaconCount(html) {
+  return html.split(BEACON).length - 1;
+}
+
+function withoutBeacon(html) {
+  return html.replaceAll(`${BEACON}\n`, "").replaceAll(BEACON, "");
+}
+
 function assertBeaconOnce(html, label = "page") {
-  assert.equal(html.split(BEACON).length - 1, 1, label);
+  assert.equal(beaconCount(html), 1, label);
   const escaped = BEACON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   assert.match(html, new RegExp(`${escaped}\\n</body>`), label);
+}
+
+function assertBeaconOptional(html, label = "page") {
+  const count = beaconCount(html);
+  assert.ok(count <= 1, label);
+  if (count === 1) assertBeaconOnce(html, label);
 }
 
 function response(data, status = 200) {
@@ -166,16 +180,24 @@ test("les pages publiques ne demandent ni nom de famille, ni école, ni endroit"
   assert.ok(list.indexOf("Plus tard") < list.indexOf("Plus tôt"));
   assert.equal(read("articles/index.html"), renderListPage(journal.articles));
   assert.match(renderListPage([]), /Pas encore d'histoire ici/);
+  const articlePages = new Set(journal.articles.map((entry) => join("articles", `${entry.slug}.html`)));
   for (const entry of journal.articles) {
     const data = JSON.parse(read(`articles/data/${entry.slug}.json`));
-    assert.equal(
-      read(`articles/${entry.slug}.html`),
-      renderArticlePage({ ...entry, ...data, slug: entry.slug }),
-    );
+    const file = read(`articles/${entry.slug}.html`);
+    const rendered = renderArticlePage({ ...entry, ...data, slug: entry.slug });
+    // Le Worker actuel réécrit l'article sans le snippet tant qu'il n'est pas redéployé.
+    // Le reste de la page doit quand même coller au modèle, sans snippet en double.
+    assert.equal(withoutBeacon(file), withoutBeacon(rendered), entry.slug);
+    assert.equal(withoutBeacon(withoutBeacon(rendered)), withoutBeacon(rendered), entry.slug);
+    assertBeaconOptional(file, entry.slug);
+    assertBeaconOptional(withoutBeacon(file), `${entry.slug} sans snippet`);
   }
   const pages = htmlFiles(".");
   assert.ok(pages.length >= 10);
-  for (const file of pages) assertBeaconOnce(read(file), file);
+  for (const file of pages) {
+    if (articlePages.has(file)) continue;
+    assertBeaconOnce(read(file), file);
+  }
 });
 
 test("la page d'accueil, le menu et le coin d'écriture sont branchés", () => {

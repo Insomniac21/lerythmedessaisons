@@ -19,6 +19,13 @@ import { createHandler } from "./worker/src/handler.js";
 import { createGitHubClient } from "./worker/src/github.js";
 import { decodeBase64, encodeBase64, stripJpegMetadata } from "./worker/src/jpeg.js";
 import { createMemoryGitHub, createMemoryKv } from "./worker/src/memory.js";
+import {
+  ARTICLE_VIEWS_ALL_PATHS_QUERY,
+  ARTICLE_VIEWS_QUERY,
+  aggregateArticleStats,
+  chooseWindow,
+  slugFromArticlePath,
+} from "./worker/src/stats.js";
 
 const ORIGIN = "https://lerythmedessaisons.ca";
 const SECRET = "les cailles de zackary";
@@ -173,14 +180,17 @@ test("les pages publiques ne demandent ni nom de famille, ni école, ni endroit"
     assert.match(html, /name="viewport"/);
     assert.match(html, /Le journal/);
     assert.doesNotMatch(html, /Saint-Jean|école|ecole|adresse|nom de famille/i);
+    assert.doesNotMatch(html, /\/api\/stats|👀|editor-vues|total-vues/);
     assertBeaconOnce(html);
   }
+  assert.doesNotMatch(read("ecrire/generer.js"), /\/api\/stats|👀|total-vues|editor-vues/);
   assert.match(article, /Écrit par Zackary/);
   assert.match(article, /src="\.\.\/assets\/articles\/2026-11-21-les-cailles\.jpg"/);
   assert.ok(list.indexOf("Plus tard") < list.indexOf("Plus tôt"));
   assert.equal(read("articles/index.html"), renderListPage(journal.articles));
   assert.match(renderListPage([]), /Pas encore d'histoire ici/);
   const articlePages = new Set(journal.articles.map((entry) => join("articles", `${entry.slug}.html`)));
+  const writingPage = join("ecrire", "index.html");
   for (const entry of journal.articles) {
     const data = JSON.parse(read(`articles/data/${entry.slug}.json`));
     const file = read(`articles/${entry.slug}.html`);
@@ -189,14 +199,19 @@ test("les pages publiques ne demandent ni nom de famille, ni école, ni endroit"
     // Le reste de la page doit quand même coller au modèle, sans snippet en double.
     assert.equal(withoutBeacon(file), withoutBeacon(rendered), entry.slug);
     assert.equal(withoutBeacon(withoutBeacon(rendered)), withoutBeacon(rendered), entry.slug);
+    assert.doesNotMatch(file, /\/api\/stats|👀|editor-vues|total-vues/, entry.slug);
+    assert.doesNotMatch(rendered, /\/api\/stats|👀|editor-vues|total-vues/, entry.slug);
     assertBeaconOptional(file, entry.slug);
     assertBeaconOptional(withoutBeacon(file), `${entry.slug} sans snippet`);
   }
   const pages = htmlFiles(".");
   assert.ok(pages.length >= 10);
   for (const file of pages) {
+    const html = read(file);
+    assert.doesNotMatch(html, /\/api\/stats|👀|editor-vues/, file);
+    if (file !== writingPage) assert.doesNotMatch(html, /total-vues/, file);
     if (articlePages.has(file)) continue;
-    assertBeaconOnce(read(file), file);
+    assertBeaconOnce(html, file);
   }
 });
 
@@ -220,6 +235,17 @@ test("la page d'accueil, le menu et le coin d'écriture sont branchés", () => {
   assert.match(editor, /Publier mon article/);
   assert.doesNotMatch(editor, /name="(?:ecole|adresse|famille|ville|nom)"/);
   assert.match(read("ecrire/config.js"), /brokerUrl:\s*"https:\/\/journal-zackary\.lerythmedessaisons\.workers\.dev"/);
+  assert.match(editor, /id="total-vues"/);
+  assert.doesNotMatch(editor, /👀|\/api\/stats/);
+  const writing = read("ecrire/editeur.js");
+  assert.match(writing, /\/api\/stats/);
+  assert.match(writing, /👀 \$\{phraseVues\(views\)\}/);
+  assert.match(writing, /dans les \$\{n\} derniers jours/);
+  assert.match(writing, /En tout, \$\{phraseVues\(total\)\}/);
+  const toml = read("outils/worker/wrangler.toml");
+  assert.match(toml, /CF_ACCOUNT_ID = "e0b51723527d602ec0487bae0dbe0874"/);
+  assert.match(toml, /CF_RUM_SITE_TAG = "071761b46ae2499f935fa16a040565b2"/);
+  assert.doesNotMatch(toml, /CF_ANALYTICS_TOKEN\s*=/);
   assert.equal(ARTICLE_SLUG.test("2026-11-21-bonjour"), true);
   assert.equal(ARTICLE_SLUG.test("../index"), false);
   assert.throws(() => assertWritable("index.html"), /chemin/);
@@ -424,4 +450,248 @@ test("le client GitHub prépare un commit sur master, sans forcer", async () => 
     files: { "index.html": { text: "piraté" } },
     deletes: [],
   }), /chemin/);
+});
+
+function statsEnv(kv, extra = {}) {
+  return testEnv(kv, {
+    CF_ACCOUNT_ID: "e0b51723527d602ec0487bae0dbe0874",
+    CF_RUM_SITE_TAG: "071761b46ae2499f935fa16a040565b2",
+    CF_ANALYTICS_TOKEN: "token-analytics-de-test",
+    ...extra,
+  });
+}
+
+function groupsPayload(groups) {
+  return {
+    data: {
+      viewer: {
+        accounts: [{ rumPageloadEventsAdaptiveGroups: groups }],
+      },
+    },
+  };
+}
+
+test("un chemin d'article devient un slug, le reste est ignoré", () => {
+  assert.equal(slugFromArticlePath("/articles/2026-11-21-bonjour-script.html"), "2026-11-21-bonjour-script");
+  assert.equal(slugFromArticlePath("/articles/2026-11-21-bonjour-script"), "2026-11-21-bonjour-script");
+  assert.equal(slugFromArticlePath("/articles/2026-11-21-bonjour-script.html/"), "2026-11-21-bonjour-script");
+  assert.equal(slugFromArticlePath("/articles/2026-11-21-le-foin.html?utm=papa"), "2026-11-21-le-foin");
+  assert.equal(slugFromArticlePath("/articles/"), null);
+  assert.equal(slugFromArticlePath("/articles/index.html"), null);
+  assert.equal(slugFromArticlePath("/articles/data/2026-11-21-bonjour.json"), null);
+  assert.equal(slugFromArticlePath("/cailles/ron.html"), null);
+  const now = new Date("2026-11-21T15:00:00Z");
+  const wide = chooseWindow(now, 8035200);
+  assert.equal(wide.windowDays, 90);
+  assert.equal(wide.until - wide.since, 90 * 24 * 60 * 60 * 1000);
+  const narrow = chooseWindow(now, 30 * 24 * 60 * 60);
+  assert.equal(narrow.windowDays, 30);
+  assert.equal(narrow.until - narrow.since, 30 * 24 * 60 * 60 * 1000 - 60 * 1000);
+  assert.match(ARTICLE_VIEWS_QUERY, /rumPageloadEventsAdaptiveGroups/);
+  assert.match(ARTICLE_VIEWS_QUERY, /requestPath_like: "\/articles\/%"/);
+  assert.match(ARTICLE_VIEWS_QUERY, /sum \{\s*visits\s*\}/);
+  assert.doesNotMatch(ARTICLE_VIEWS_ALL_PATHS_QUERY, /requestPath_like/);
+});
+
+test("les vues restent derrière le mot secret et ne cassent pas la page", async () => {
+  const kv = createMemoryKv();
+  const now = new Date("2026-11-21T15:00:00Z");
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const body = JSON.parse(options.body);
+    calls.push({ url, body, authorization: options.headers.Authorization });
+    if (body.query.includes("RumSettings")) {
+      return response({
+        data: {
+          viewer: {
+            accounts: [{ settings: { rumPageloadEventsAdaptiveGroups: { maxDuration: 8035200 } } }],
+          },
+        },
+      });
+    }
+    assert.equal(body.query, ARTICLE_VIEWS_QUERY);
+    return response(groupsPayload([
+      { count: 4, sum: { visits: 3 }, dimensions: { requestPath: "/articles/2026-11-21-bonjour-script.html" } },
+      { count: 2, sum: { visits: 1.2 }, dimensions: { requestPath: "/articles/2026-11-21-bonjour-script" } },
+      { count: 9, sum: { visits: 4 }, dimensions: { requestPath: "/articles/index.html" } },
+      { count: 1, sum: { visits: 1 }, dimensions: { requestPath: "/articles/" } },
+      { count: 7, sum: { visits: 5 }, dimensions: { requestPath: "/cailles/ron.html" } },
+      { count: 3, sum: { visits: 2 }, dimensions: { requestPath: "/articles/2026-11-21-le-foin.html?utm=x" } },
+    ]));
+  };
+  const handle = createHandler({ github: createMemoryGitHub(), fetchImpl, now: () => now });
+  const env = statsEnv(kv);
+
+  const denied = await handle(request("/api/stats"), env);
+  assert.equal(denied.status, 401);
+  assert.equal(calls.length, 0);
+
+  const outsider = await handle(request("/api/stats", { origin: "https://exemple.test" }), env);
+  assert.equal(outsider.status, 403);
+  assert.equal(calls.length, 0);
+
+  const missing = await handle(request("/api/stats"), testEnv(kv));
+  assert.equal(missing.status, 401);
+
+  const token = await login(handle, env);
+  const absent = await handle(request("/api/stats", { token }), testEnv(kv));
+  assert.equal(absent.status, 200);
+  assert.deepEqual(await absent.json(), { ok: false, windowDays: 90, articles: {} });
+  assert.equal(calls.length, 0);
+
+  const first = await handle(request("/api/stats", { token }), env);
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("cache-control"), "no-store");
+  const stats = await first.json();
+  assert.equal(stats.ok, true);
+  assert.equal(stats.windowDays, 90);
+  assert.deepEqual(stats.articles, {
+    "2026-11-21-bonjour-script": { views: 6, visits: 4 },
+    "2026-11-21-le-foin": { views: 3, visits: 2 },
+  });
+  assert.deepEqual(aggregateArticleStats([
+    { count: 4, sum: { visits: 3 }, dimensions: { requestPath: "/articles/2026-11-21-bonjour-script.html" } },
+    { count: 2, sum: { visits: 1.2 }, dimensions: { requestPath: "/articles/2026-11-21-bonjour-script" } },
+  ]), { "2026-11-21-bonjour-script": { views: 6, visits: 4 } });
+  const window = chooseWindow(now, 8035200);
+  const viewsCall = calls.find((call) => call.body.query === ARTICLE_VIEWS_QUERY);
+  assert.equal(viewsCall.url, "https://api.cloudflare.com/client/v4/graphql");
+  assert.equal(viewsCall.authorization, "Bearer token-analytics-de-test");
+  assert.equal(viewsCall.body.variables.accountTag, "e0b51723527d602ec0487bae0dbe0874");
+  assert.equal(viewsCall.body.variables.siteTag, "071761b46ae2499f935fa16a040565b2");
+  assert.equal(viewsCall.body.variables.since, window.since.toISOString());
+  assert.equal(viewsCall.body.variables.until, window.until.toISOString());
+  assert.equal(calls.length, 2);
+
+  calls.length = 0;
+  const cached = await handle(request("/api/stats", { token }), env);
+  assert.deepEqual(await cached.json(), stats);
+  assert.equal(calls.length, 0);
+});
+
+test("une fenêtre trop large retombe sur 30 jours, une erreur reste vide", async () => {
+  const kv = createMemoryKv();
+  const now = new Date("2026-11-21T15:00:00Z");
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const body = JSON.parse(options.body);
+    calls.push(body);
+    if (body.query.includes("RumSettings")) {
+      return response({
+        data: {
+          viewer: {
+            accounts: [{ settings: { rumPageloadEventsAdaptiveGroups: { maxDuration: 8035200 } } }],
+          },
+        },
+      });
+    }
+    const span = Date.parse(body.variables.until) - Date.parse(body.variables.since);
+    if (span > 40 * 24 * 60 * 60 * 1000) {
+      return response({
+        errors: [{ message: 'cannot request a time range wider than 13w2d, but your query time range spans 12w6d' }],
+      });
+    }
+    assert.equal(body.query, ARTICLE_VIEWS_QUERY);
+    return response(groupsPayload([
+      { count: 2, sum: { visits: 1 }, dimensions: { requestPath: "/articles/2026-11-21-bonjour.html" } },
+    ]));
+  };
+  const handle = createHandler({ github: createMemoryGitHub(), fetchImpl, now: () => now });
+  const env = statsEnv(kv);
+  const token = await login(handle, env, "203.0.113.21");
+  const result = await handle(request("/api/stats", { token }), env);
+  const stats = await result.json();
+  assert.equal(result.status, 200);
+  assert.equal(stats.ok, true);
+  assert.equal(stats.windowDays, 30);
+  assert.deepEqual(stats.articles, { "2026-11-21-bonjour": { views: 2, visits: 1 } });
+  const limited = chooseWindow(now, 30 * 24 * 60 * 60);
+  const retry = calls.filter((call) => call.query === ARTICLE_VIEWS_QUERY);
+  assert.equal(retry.length, 2);
+  assert.equal(retry[1].variables.since, limited.since.toISOString());
+
+  const brokenKv = createMemoryKv();
+  let attempts = 0;
+  const broken = createHandler({
+    github: createMemoryGitHub(),
+    now: () => now,
+    fetchImpl: async () => {
+      attempts += 1;
+      return response({ errors: [{ message: "jeton refusé" }] }, 401);
+    },
+  });
+  const brokenEnv = statsEnv(brokenKv);
+  const brokenToken = await login(broken, brokenEnv, "203.0.113.22");
+  const first = await broken(request("/api/stats", { token: brokenToken }), brokenEnv);
+  assert.equal(first.status, 200);
+  assert.deepEqual(await first.json(), { ok: false, windowDays: 90, articles: {} });
+  const second = await broken(request("/api/stats", { token: brokenToken }), brokenEnv);
+  assert.deepEqual(await second.json(), { ok: false, windowDays: 90, articles: {} });
+  assert.equal(attempts, 2);
+});
+
+test("sans filtre de chemin, on ne compte quand même que les articles", async () => {
+  const kv = createMemoryKv();
+  const calls = [];
+  const fetchImpl = async (_url, options = {}) => {
+    const body = JSON.parse(options.body);
+    calls.push(body.query);
+    if (body.query.includes("RumSettings")) {
+      return response({ errors: [{ message: "settings indisponible" }] });
+    }
+    if (body.query === ARTICLE_VIEWS_QUERY) {
+      return response({ errors: [{ message: 'unknown field "requestPath_like" on type RumFilter' }] });
+    }
+    assert.equal(body.query, ARTICLE_VIEWS_ALL_PATHS_QUERY);
+    return response(groupsPayload([
+      { count: 5, sum: { visits: 2 }, dimensions: { requestPath: "/articles/2026-11-21-les-cailles.html" } },
+      { count: 8, sum: { visits: 3 }, dimensions: { requestPath: "/" } },
+    ]));
+  };
+  const handle = createHandler({
+    github: createMemoryGitHub(),
+    fetchImpl,
+    now: () => new Date("2026-11-21T15:00:00Z"),
+  });
+  const env = statsEnv(kv);
+  const token = await login(handle, env, "203.0.113.23");
+  const result = await handle(request("/api/stats", { token }), env);
+  const stats = await result.json();
+  assert.equal(stats.ok, true);
+  assert.equal(stats.windowDays, 90);
+  assert.deepEqual(stats.articles, { "2026-11-21-les-cailles": { views: 5, visits: 2 } });
+  assert.ok(calls.includes(ARTICLE_VIEWS_ALL_PATHS_QUERY));
+});
+
+test("si les visites ne sont pas offertes, les vues restent là", async () => {
+  const kv = createMemoryKv();
+  const queries = [];
+  const fetchImpl = async (_url, options = {}) => {
+    const body = JSON.parse(options.body);
+    queries.push(body.query);
+    if (body.query.includes("RumSettings")) {
+      return response({
+        data: { viewer: { accounts: [{ settings: { rumPageloadEventsAdaptiveGroups: { maxDuration: 8035200 } } }] } },
+      });
+    }
+    if (body.query.includes("visits")) {
+      return response({ errors: [{ message: 'unknown field "visits"' }] });
+    }
+    assert.match(body.query, /requestPath_like: "\/articles\/%"/);
+    return response(groupsPayload([
+      { count: 4, dimensions: { requestPath: "/articles/2026-11-21-bonjour.html" } },
+    ]));
+  };
+  const handle = createHandler({
+    github: createMemoryGitHub(),
+    fetchImpl,
+    now: () => new Date("2026-11-21T15:00:00Z"),
+  });
+  const env = statsEnv(kv);
+  const token = await login(handle, env, "203.0.113.24");
+  const stats = await (await handle(request("/api/stats", { token }), env)).json();
+  assert.equal(stats.ok, true);
+  assert.deepEqual(stats.articles, { "2026-11-21-bonjour": { views: 4, visits: 0 } });
+  assert.ok(queries.some((query) => query.includes("visits")));
+  assert.ok(queries.some((query) => !query.includes("visits") && !query.includes("RumSettings")));
 });

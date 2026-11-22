@@ -10,6 +10,10 @@ GITHUB_OWNER = "Insomniac21"
 GITHUB_REPO = "lerythmedessaisons"
 GITHUB_BRANCH = "master"
 ALLOWED_ORIGINS = "https://lerythmedessaisons.ca"
+# Identifiants Web Analytics (pas des secrets). Le jeton de lecture se pose à part :
+# npx wrangler secret put CF_ANALYTICS_TOKEN
+CF_ACCOUNT_ID = "e0b51723527d602ec0487bae0dbe0874"
+CF_RUM_SITE_TAG = "071761b46ae2499f935fa16a040565b2"
 
 # Remplacez l'id par celui affiché par : npx wrangler kv namespace create SESSIONS
 [[kv_namespaces]]

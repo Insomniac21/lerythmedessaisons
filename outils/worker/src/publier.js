@@ -6,6 +6,7 @@ import {
   quebecDateParts,
   renderArticlePage,
   renderListPage,
+  sectionProfile,
   serializeArticleData,
   serializeJournal,
 } from "../../../ecrire/generer.js";
@@ -16,15 +17,15 @@ function fail(name) {
   throw error;
 }
 
-function commitMessage(kind, title) {
+function commitMessage(section, kind, title) {
   const short = title.slice(0, 72);
-  if (kind === "edit") return `Journal de Zackary : correction — ${short}`;
-  if (kind === "delete") return `Journal de Zackary : retrait — ${short}`;
-  return `Journal de Zackary : ${short}`;
+  if (kind === "edit") return `${section.commit} : correction — ${short}`;
+  if (kind === "delete") return `${section.commit} : retrait — ${short}`;
+  return `${section.commit} : ${short}`;
 }
 
-async function readJournal(github) {
-  const text = await github.readText("articles/journal.json");
+async function readJournal(github, section) {
+  const text = await github.readText(`${section.dir}/journal.json`);
   if (!text) return [];
   let data;
   try {
@@ -50,19 +51,20 @@ function entryFrom(article) {
   };
 }
 
-function filesFor(articles, article) {
+function filesFor(section, articles, article) {
   const files = {
-    [`articles/${article.slug}.html`]: { text: renderArticlePage(article) },
-    [`articles/data/${article.slug}.json`]: { text: serializeArticleData(article) },
-    "articles/journal.json": { text: serializeJournal(articles) },
-    "articles/index.html": { text: renderListPage(articles) },
+    [`${section.dir}/${article.slug}.html`]: { text: renderArticlePage(article, section.id) },
+    [`${section.dir}/data/${article.slug}.json`]: { text: serializeArticleData(article) },
+    [`${section.dir}/journal.json`]: { text: serializeJournal(articles) },
+    [`${section.dir}/index.html`]: { text: renderListPage(articles, section.id) },
   };
   for (const filePath of Object.keys(files)) assertWritable(filePath);
   return files;
 }
 
-export async function publishArticle(github, input, now = new Date()) {
-  const articles = await readJournal(github);
+export async function publishArticle(github, input, now = new Date(), sectionId = "zackary") {
+  const section = sectionProfile(sectionId);
+  const articles = await readJournal(github, section);
   const previous = input.slug ? articles.find((article) => article.slug === input.slug) : null;
   if (input.slug && !previous) fail("introuvable");
 
@@ -85,7 +87,7 @@ export async function publishArticle(github, input, now = new Date()) {
   let image = previousImage;
   const deletes = [];
   if (input.imageBytes) {
-    image = `assets/articles/${slug}.jpg`;
+    image = `${section.assets}/${slug}.jpg`;
   } else if (input.removeImage) {
     image = null;
     if (previousImage) deletes.push(previousImage);
@@ -104,25 +106,26 @@ export async function publishArticle(github, input, now = new Date()) {
     ...articles.filter((item) => item.slug !== slug).map(entryFrom),
     entryFrom(article),
   ];
-  const files = filesFor(nextArticles, article);
+  const files = filesFor(section, nextArticles, article);
   if (input.imageBytes) {
     assertWritable(image);
     files[image] = { bytes: input.imageBytes };
   }
   for (const filePath of deletes) assertWritable(filePath);
   await github.commit({
-    message: commitMessage(previous ? "edit" : "create", input.title),
+    message: commitMessage(section, previous ? "edit" : "create", input.title),
     files,
     deletes,
   });
-  return { slug, url: `/articles/${slug}.html` };
+  return { slug, url: `/${section.dir}/${slug}.html`, section: section.id };
 }
 
-export async function deleteArticle(github, slug) {
-  const articles = await readJournal(github);
+export async function deleteArticle(github, slug, sectionId = "zackary") {
+  const section = sectionProfile(sectionId);
+  const articles = await readJournal(github, section);
   const current = articles.find((article) => article.slug === slug);
   if (!current) fail("introuvable");
-  const dataPath = `articles/data/${slug}.json`;
+  const dataPath = `${section.dir}/data/${slug}.json`;
   let title = current.title;
   const raw = await github.readText(dataPath);
   if (raw) {
@@ -133,28 +136,29 @@ export async function deleteArticle(github, slug) {
     }
   }
   const remaining = articles.filter((article) => article.slug !== slug).map(entryFrom);
-  const deletes = [`articles/${slug}.html`, dataPath];
+  const deletes = [`${section.dir}/${slug}.html`, dataPath];
   if (current.image) deletes.push(current.image);
   for (const filePath of deletes) assertWritable(filePath);
   await github.commit({
-    message: commitMessage("delete", title),
+    message: commitMessage(section, "delete", title),
     files: {
-      "articles/journal.json": { text: serializeJournal(remaining) },
-      "articles/index.html": { text: renderListPage(remaining) },
+      [`${section.dir}/journal.json`]: { text: serializeJournal(remaining) },
+      [`${section.dir}/index.html`]: { text: renderListPage(remaining, section.id) },
     },
     deletes,
   });
 }
 
-export async function listArticles(github) {
-  const articles = await readJournal(github);
+export async function listArticles(github, sectionId = "zackary") {
+  const articles = await readJournal(github, sectionProfile(sectionId));
   return [...articles].sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)));
 }
 
-export async function readArticle(github, slug) {
-  const articles = await readJournal(github);
+export async function readArticle(github, slug, sectionId = "zackary") {
+  const section = sectionProfile(sectionId);
+  const articles = await readJournal(github, section);
   if (!articles.some((article) => article.slug === slug)) fail("introuvable");
-  const raw = await github.readText(`articles/data/${slug}.json`);
+  const raw = await github.readText(`${section.dir}/data/${slug}.json`);
   if (!raw) fail("introuvable");
   let data;
   try {
@@ -164,6 +168,7 @@ export async function readArticle(github, slug) {
   }
   return {
     slug,
+    section: section.id,
     title: data.title,
     body: data.body,
     date: data.date,

@@ -30,12 +30,19 @@ export function validateSlug(value) {
   return value;
 }
 
+export function validateSection(value) {
+  if (value == null || value === "") return null;
+  if (value === "zackary" || value === "carnet") return value;
+  fail("section");
+}
+
 export function validatePublish(input) {
   if (!input || typeof input !== "object") fail("json");
   const title = cleanTitle(input.title);
   const body = cleanBody(input.body);
   const removeImage = input.removeImage === true;
   const slug = input.slug == null || input.slug === "" ? null : validateSlug(input.slug);
+  const section = validateSection(input.section);
   let imageBytes = null;
   if (input.imageBase64 != null && input.imageBase64 !== "") {
     if (typeof input.imageBase64 !== "string" || input.imageBase64.length > 2_000_000) fail("photo");
@@ -47,5 +54,5 @@ export function validatePublish(input) {
     }
     if (imageBytes.length < 20 || imageBytes.length > IMAGE_MAX) fail("photo");
   }
-  return { title, body, removeImage, slug, imageBytes };
+  return { title, body, removeImage, slug, section, imageBytes };
 }

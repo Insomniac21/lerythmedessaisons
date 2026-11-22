@@ -5,17 +5,16 @@ import {
   clientIp,
   createSession,
   deleteSession,
-  passphraseMatches,
+  matchRole,
   publishingReady,
   readSession,
   recordFailure,
   recordPublish,
-  configuredSecrets,
 } from "./auth.js";
 import { createGitHubClient } from "./github.js";
 import { deleteArticle, listArticles, publishArticle, readArticle } from "./publier.js";
 import { loadArticleStats } from "./stats.js";
-import { validatePublish, validateSlug } from "./valider.js";
+import { validatePublish, validateSection, validateSlug } from "./valider.js";
 
 const BODY_MAX = 2_500_000;
 
@@ -84,7 +83,40 @@ const STATUS = {
   "trop-vite": 429,
   journal: 500,
   chemin: 500,
+  interdit: 403,
+  section: 400,
 };
+
+function resolveSection(role, requested) {
+  if (role === "zackary") {
+    if (requested && requested !== "zackary") fail("interdit");
+    return "zackary";
+  }
+  if (role !== "parent") fail("non-autorise");
+  if (!requested || requested === "carnet") return "carnet";
+  if (requested === "zackary") return "zackary";
+  fail("interdit");
+}
+
+async function sectionFor(github, role, requested, slug) {
+  if (requested || role !== "parent" || !slug) return resolveSection(role, requested);
+  const carnet = await listArticles(github, "carnet");
+  if (carnet.some((article) => article.slug === slug)) return "carnet";
+  const articles = await listArticles(github, "zackary");
+  if (articles.some((article) => article.slug === slug)) return "zackary";
+  return "carnet";
+}
+
+function publicArticle(article, section) {
+  return {
+    slug: article.slug,
+    title: article.title,
+    date: article.date,
+    excerpt: article.excerpt,
+    image: article.image || null,
+    section,
+  };
+}
 
 export function createHandler(options = {}) {
   const githubFor = options.github
@@ -116,20 +148,20 @@ export function createHandler(options = {}) {
         const body = await readJson(request);
         const passphrase = typeof body.passphrase === "string" ? body.passphrase.trim() : "";
         if (!passphrase || passphrase.length > 200) fail("mot-incorrect");
-        const ok = await passphraseMatches(passphrase, configuredSecrets(env));
-        if (!ok) {
+        const role = await matchRole(passphrase, env);
+        if (!role) {
           await recordFailure(env.SESSIONS, ip);
           fail("mot-incorrect");
         }
         await clearFailures(env.SESSIONS, ip);
-        return json(200, await createSession(env.SESSIONS), origin);
+        return json(200, await createSession(env.SESSIONS, role), origin);
       }
 
       const session = await readSession(env.SESSIONS, request);
       if (!session) fail("non-autorise");
 
       if (url.pathname === "/api/logout" && request.method === "POST") {
-        await deleteSession(env.SESSIONS, session);
+        await deleteSession(env.SESSIONS, session.token);
         return json(200, { ok: true }, origin);
       }
 
@@ -141,20 +173,20 @@ export function createHandler(options = {}) {
       const github = githubFor(env);
 
       if (url.pathname === "/api/journal" && request.method === "GET") {
-        const articles = await listArticles(github);
+        const articles = await listArticles(github, "zackary");
+        const carnet = session.role === "parent" ? await listArticles(github, "carnet") : [];
         return json(200, {
-          articles: articles.map((article) => ({
-            slug: article.slug,
-            title: article.title,
-            date: article.date,
-            excerpt: article.excerpt,
-            image: article.image || null,
-          })),
+          role: session.role,
+          section: session.role === "parent" ? "carnet" : "zackary",
+          articles: articles.map((article) => publicArticle(article, "zackary")),
+          carnet: carnet.map((article) => publicArticle(article, "carnet")),
         }, origin);
       }
 
       if (url.pathname === "/api/article" && request.method === "GET") {
-        return json(200, await readArticle(github, validateSlug(url.searchParams.get("slug"))), origin);
+        const slug = validateSlug(url.searchParams.get("slug"));
+        const section = await sectionFor(github, session.role, validateSection(url.searchParams.get("section")), slug);
+        return json(200, await readArticle(github, slug, section), origin);
       }
 
       if (url.pathname === "/api/publish" && request.method === "POST") {
@@ -162,12 +194,13 @@ export function createHandler(options = {}) {
         const ip = clientIp(request);
         await assertPublishBudget(env.SESSIONS, ip);
         const input = validatePublish(await readJson(request));
+        const section = await sectionFor(github, session.role, input.section, input.slug);
         let result;
         try {
-          result = await publishArticle(github, input, now());
+          result = await publishArticle(github, input, now(), section);
         } catch (error) {
           if (error.status !== 409 && error.status !== 422) throw error;
-          result = await publishArticle(github, input, now());
+          result = await publishArticle(github, input, now(), section);
         }
         await recordPublish(env.SESSIONS, ip);
         return json(200, result, origin);
@@ -178,11 +211,13 @@ export function createHandler(options = {}) {
         const ip = clientIp(request);
         await assertPublishBudget(env.SESSIONS, ip);
         const body = await readJson(request);
+        const slug = validateSlug(body?.slug);
+        const section = await sectionFor(github, session.role, validateSection(body?.section), slug);
         try {
-          await deleteArticle(github, validateSlug(body.slug));
+          await deleteArticle(github, slug, section);
         } catch (error) {
           if (error.status !== 409 && error.status !== 422) throw error;
-          await deleteArticle(github, validateSlug(body.slug));
+          await deleteArticle(github, slug, section);
         }
         await recordPublish(env.SESSIONS, ip);
         return json(200, { ok: true }, origin);

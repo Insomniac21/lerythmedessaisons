@@ -10,6 +10,7 @@ const port = Number(process.env.PORT || 8765);
 const passphrase = "mot-secret-demo";
 const github = createMemoryGitHub({
   "articles/journal.json": readFileSync(join(root, "articles/journal.json"), "utf8"),
+  "carnet/journal.json": readFileSync(join(root, "carnet/journal.json"), "utf8"),
 });
 const kv = createMemoryKv();
 const handle = createHandler({ github });

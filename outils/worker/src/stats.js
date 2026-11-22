@@ -4,7 +4,7 @@ import { ARTICLE_SLUG } from "../../../ecrire/generer.js";
 // Les pages publiques ne lisent pas ce module.
 
 const GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql";
-const CACHE_KEY = "stats:articles:v1";
+const CACHE_KEY = "stats:articles:v2";
 const CACHE_TTL_SECONDS = 600;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TARGET_WINDOW_MS = 90 * DAY_MS;
@@ -13,10 +13,14 @@ const WINDOW_MARGIN_MS = 60 * 1000;
 
 // rumPageloadEventsAdaptiveGroups : maxDuration souvent 93 jours
 // (8 035 200 s). On demande 90 jours, puis on serre à la limite du compte.
-function viewsQuery(withPath, withVisits) {
-  const pathLine = withPath ? "\n          requestPath_like: \"/articles/%\"" : "";
+function viewsQuery(pathLike, withVisits) {
+  const pathLine = pathLike ? `\n          requestPath_like: "${pathLike}"` : "";
   const visitsBlock = withVisits ? "\n        sum {\n          visits\n        }" : "";
-  const name = `ArticleViews${withPath ? "" : "AllPaths"}${withVisits ? "" : "Count"}`;
+  let suffix = "";
+  if (!pathLike) suffix += "AllPaths";
+  else if (String(pathLike).includes("carnet")) suffix += "Carnet";
+  if (!withVisits) suffix += "Count";
+  const name = `ArticleViews${suffix}`;
   return `query ${name}($accountTag: String!, $siteTag: String!, $since: Time!, $until: Time!) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
@@ -39,9 +43,11 @@ function viewsQuery(withPath, withVisits) {
 }`;
 }
 
-export const ARTICLE_VIEWS_QUERY = viewsQuery(true, true);
-export const ARTICLE_VIEWS_ALL_PATHS_QUERY = viewsQuery(false, true);
-const ARTICLE_VIEWS_COUNT_QUERY = viewsQuery(true, false);
+export const ARTICLE_VIEWS_QUERY = viewsQuery("/articles/%", true);
+export const CARNET_VIEWS_QUERY = viewsQuery("/carnet/%", true);
+export const ARTICLE_VIEWS_ALL_PATHS_QUERY = viewsQuery("", true);
+const ARTICLE_VIEWS_COUNT_QUERY = viewsQuery("/articles/%", false);
+const CARNET_VIEWS_COUNT_QUERY = viewsQuery("/carnet/%", false);
 
 const RUM_SETTINGS_QUERY = `query RumSettings($accountTag: String!) {
   viewer {
@@ -70,25 +76,30 @@ export function chooseWindow(now, maxDurationSeconds) {
   };
 }
 
-export function slugFromArticlePath(path) {
+export function sectionFromPath(path) {
   if (typeof path !== "string" || path.length === 0 || path.length > 300) return null;
   const pathname = path.split("?")[0].split("#")[0];
-  const match = pathname.match(/^\/articles\/([^/]+?)(?:\.html)?\/?$/);
-  if (!match) return null;
-  return ARTICLE_SLUG.test(match[1]) ? match[1] : null;
+  const match = pathname.match(/^\/(articles|carnet)\/([^/]+?)(?:\.html)?\/?$/);
+  if (!match || !ARTICLE_SLUG.test(match[2])) return null;
+  return { section: match[1] === "carnet" ? "carnet" : "zackary", slug: match[2] };
 }
 
-export function aggregateArticleStats(groups) {
+export function slugFromArticlePath(path) {
+  const found = sectionFromPath(path);
+  return found && found.section === "zackary" ? found.slug : null;
+}
+
+function tally(groups, section) {
   const totals = new Map();
   for (const group of groups || []) {
-    const slug = slugFromArticlePath(group?.dimensions?.requestPath);
-    if (!slug) continue;
+    const found = sectionFromPath(group?.dimensions?.requestPath);
+    if (!found || found.section !== section) continue;
     const views = Number(group?.count);
     const visits = Number(group?.sum?.visits);
-    const row = totals.get(slug) || { views: 0, visits: 0 };
+    const row = totals.get(found.slug) || { views: 0, visits: 0 };
     if (Number.isFinite(views)) row.views += views;
     if (Number.isFinite(visits)) row.visits += visits;
-    totals.set(slug, row);
+    totals.set(found.slug, row);
   }
   const articles = {};
   for (const [slug, row] of totals) {
@@ -100,8 +111,16 @@ export function aggregateArticleStats(groups) {
   return articles;
 }
 
+export function aggregateArticleStats(groups) {
+  return tally(groups, "zackary");
+}
+
+export function aggregateCarnetStats(groups) {
+  return tally(groups, "carnet");
+}
+
 function unavailable(windowDays = 90) {
-  return { ok: false, windowDays, articles: {} };
+  return { ok: false, windowDays, articles: {}, carnet: {} };
 }
 
 function cleanId(value) {
@@ -153,7 +172,11 @@ function queryFor(withPath, withVisits) {
   if (withPath && withVisits) return ARTICLE_VIEWS_QUERY;
   if (!withPath && withVisits) return ARTICLE_VIEWS_ALL_PATHS_QUERY;
   if (withPath) return ARTICLE_VIEWS_COUNT_QUERY;
-  return viewsQuery(false, false);
+  return viewsQuery("", false);
+}
+
+function carnetQuery(withVisits) {
+  return withVisits ? CARNET_VIEWS_QUERY : CARNET_VIEWS_COUNT_QUERY;
 }
 
 async function readGroups(fetchImpl, token, accountTag, siteTag, window, withPath, withVisits) {
@@ -199,10 +222,31 @@ async function queryArticleStats(fetchImpl, token, accountTag, siteTag, now) {
     found = await readGroups(fetchImpl, token, accountTag, siteTag, window, withPath, withVisits);
   }
   if (!found.groups) return unavailable(window.windowDays);
+  let carnetGroups = found.groups;
+  if (withPath) {
+    const extra = await graphql(fetchImpl, token, carnetQuery(withVisits), {
+      accountTag,
+      siteTag,
+      since: window.since.toISOString(),
+      until: window.until.toISOString(),
+    });
+    let extraGroups = extra?.data?.viewer?.accounts?.[0]?.rumPageloadEventsAdaptiveGroups;
+    if (extra.errors?.length && withVisits && /visits/.test(errorText(extra))) {
+      const counted = await graphql(fetchImpl, token, CARNET_VIEWS_COUNT_QUERY, {
+        accountTag,
+        siteTag,
+        since: window.since.toISOString(),
+        until: window.until.toISOString(),
+      });
+      extraGroups = counted?.data?.viewer?.accounts?.[0]?.rumPageloadEventsAdaptiveGroups;
+    }
+    carnetGroups = Array.isArray(extraGroups) ? extraGroups : [];
+  }
   return {
     ok: true,
     windowDays: window.windowDays,
     articles: aggregateArticleStats(found.groups),
+    carnet: aggregateCarnetStats(carnetGroups),
   };
 }
 
@@ -218,6 +262,7 @@ async function readCache(kv) {
   }
   if (!parsed || typeof parsed.ok !== "boolean" || typeof parsed.windowDays !== "number") return null;
   if (!parsed.articles || typeof parsed.articles !== "object" || Array.isArray(parsed.articles)) return null;
+  if (!parsed.carnet || typeof parsed.carnet !== "object" || Array.isArray(parsed.carnet)) return null;
   return parsed;
 }
 

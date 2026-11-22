@@ -140,6 +140,8 @@ label.btn{cursor:pointer}
 .check-line{display:flex;align-items:center;gap:.55rem;font-weight:700;margin-top:.4rem}
 .check-line input{width:1.2rem;height:1.2rem}
 .editor-sous-titre{font-size:clamp(1.7rem,3.4vw,2.15rem);margin-top:2.2rem}
+.editor-choix{border:0;margin:0 0 1rem;padding:0}
+.editor-choix legend{font-weight:700;padding:0;margin:0 0 .35rem}
 .editor-row{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.7rem}
 .editor-vues{margin:.2rem 0 0;font-weight:700;color:var(--sage-d)}
 .editor-total{text-align:center;font-family:var(--serif);font-size:1.35rem;color:var(--sage-d);margin:0 0 1rem}

@@ -2,9 +2,56 @@ const ORIGIN = "https://lerythmedessaisons.ca";
 const SLUG_SRC = "[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*";
 
 export const ARTICLE_SLUG = new RegExp(`^${SLUG_SRC}$`);
+
+function writableSource(dir, assets) {
+  const files = assets.replaceAll("/", "\\/");
+  return `${dir}\\/journal\\.json|${dir}\\/index\\.html|${dir}\\/${SLUG_SRC}\\.html|${dir}\\/data\\/${SLUG_SRC}\\.json|${files}\\/${SLUG_SRC}\\.jpg`;
+}
+
 export const WRITABLE_PATH = new RegExp(
-  `^(?:articles\\/journal\\.json|articles\\/index\\.html|articles\\/${SLUG_SRC}\\.html|articles\\/data\\/${SLUG_SRC}\\.json|assets\\/articles\\/${SLUG_SRC}\\.jpg)$`
+  `^(?:${writableSource("articles", "assets/articles")}|${writableSource("carnet", "assets/carnet")})$`
 );
+
+const SECTIONS = {
+  zackary: {
+    id: "zackary",
+    dir: "articles",
+    assets: "assets/articles",
+    authorName: "Zackary",
+    avatar: "assets/zackary-avatar.jpg",
+    journalName: "Le journal de Zackary",
+    pageTitle: "Le journal de Zackary · Le Rythme des Saisons",
+    description: "Les articles de Zackary : des petites histoires de la fermette, au fil des saisons.",
+    canonical: "/articles/",
+    lead: "Des petites histoires écrites par Zackary, au fil des saisons.",
+    blurb: "Les cailles, les cochons d'Inde, et les moments de la fermette.",
+    authorLink: "L'auteur : Zackary",
+    empty: "Pas encore d'histoire ici. Zackary en écrira bientôt une.",
+    write: "Zackary : écrire un article",
+    commit: "Journal de Zackary",
+  },
+  carnet: {
+    id: "carnet",
+    dir: "carnet",
+    assets: "assets/carnet",
+    authorName: "Marc-André",
+    avatar: "assets/marc-andre-avatar.jpg",
+    journalName: "Le carnet du fermier",
+    pageTitle: "Le carnet du fermier · Le Rythme des Saisons",
+    description: "Le carnet de Marc-André : la fermette, les cailles et les projets, au fil des saisons.",
+    canonical: "/carnet/",
+    lead: "Des notes de Marc-André, le papa de Zackary, au fil des saisons.",
+    blurb: "Les cailles, les projets, et la vie à la fermette.",
+    authorLink: "L'auteur : Marc-André",
+    empty: "Pas encore de note ici. Marc-André en écrira bientôt une.",
+    write: "Marc-André : écrire dans le carnet",
+    commit: "Carnet de Marc-André",
+  },
+};
+
+export function sectionProfile(id) {
+  return id === "carnet" ? SECTIONS.carnet : SECTIONS.zackary;
+}
 
 const FONT_HREF = "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Nunito+Sans:wght@400;600;700&display=swap";
 
@@ -82,7 +129,7 @@ export function textToParagraphs(text) {
     .join("\n");
 }
 
-function page({ title, description, canonicalPath, imagePath, main }) {
+function page({ title, description, canonicalPath, imagePath, main, sectionId = "zackary" }) {
   const canonical = `${ORIGIN}${canonicalPath}`;
   const image = imagePath
     ? `${ORIGIN}/${imagePath.replace(/^\//, "")}`
@@ -90,6 +137,10 @@ function page({ title, description, canonicalPath, imagePath, main }) {
   const imageSize = imagePath
     ? ""
     : `\n<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">`;
+  const journalHref = sectionId === "zackary" ? "index.html" : "../articles/index.html";
+  const carnetHref = sectionId === "carnet" ? "index.html" : "../carnet/index.html";
+  const journalCurrent = sectionId === "zackary" ? ' aria-current="page"' : "";
+  const carnetCurrent = sectionId === "carnet" ? ' aria-current="page"' : "";
   return `<!doctype html>
 <html lang="fr-CA">
 <head>
@@ -124,7 +175,8 @@ function page({ title, description, canonicalPath, imagePath, main }) {
       <a href="../index.html#a-propos">À propos</a>
       <a href="../index.html#animaux">Nos animaux</a>
       <a href="../cailles/index.html">Nos cailles</a>
-      <a href="index.html" aria-current="page">Le journal</a>
+      <a href="${journalHref}"${journalCurrent}>Le journal</a>
+      <a href="${carnetHref}"${carnetCurrent}>Le carnet</a>
       <a href="../index.html#videos">Vidéos</a>
       <a href="../index.html#produits">Produits</a>
       <a href="../index.html#contact">Contact</a>
@@ -154,7 +206,8 @@ ${main}
 `;
 }
 
-export function renderArticlePage(article) {
+export function renderArticlePage(article, sectionId = "zackary") {
+  const section = sectionProfile(sectionId);
   const description = excerpt(article.body) || article.title;
   const dateLabel = labelFromIso(article.date);
   const figure = article.image
@@ -165,24 +218,26 @@ export function renderArticlePage(article) {
     : "";
   const main = `  <section class="section journal-page">
     <div class="wrap narrow">
-      <p class="back-link"><a href="index.html">← Le journal de Zackary</a></p>
+      <p class="back-link"><a href="index.html">← ${section.journalName}</a></p>
       <h1>${escapeHtml(article.title)}</h1>
-      <p class="journal-byline">Écrit par Zackary · <time datetime="${escapeHtml(article.date)}">${escapeHtml(dateLabel)}</time></p>${figure}
+      <p class="journal-byline"><a href="auteur.html"><img src="../${section.avatar}" alt="" width="40" height="40"><span>Écrit par ${section.authorName}</span></a> · <time datetime="${escapeHtml(article.date)}">${escapeHtml(dateLabel)}</time></p>${figure}
       <div class="journal-body">
 ${textToParagraphs(article.body)}
       </div>
     </div>
   </section>`;
   return page({
-    title: `${article.title} · Le journal de Zackary`,
+    title: `${article.title} · ${section.journalName}`,
     description,
-    canonicalPath: `/articles/${article.slug}.html`,
+    canonicalPath: `/${section.dir}/${article.slug}.html`,
     imagePath: article.image,
     main,
+    sectionId: section.id,
   });
 }
 
-export function renderListPage(articles) {
+export function renderListPage(articles, sectionId = "zackary") {
+  const section = sectionProfile(sectionId);
   const sorted = [...articles].sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)));
   const cards = sorted.length
     ? `      <div class="cards journal-cards">
@@ -202,24 +257,26 @@ ${sorted.map((article) => {
         </article>`;
 }).join("\n")}
       </div>`
-    : `      <p class="journal-empty">Pas encore d'histoire ici. Zackary en écrira bientôt une.</p>`;
+    : `      <p class="journal-empty">${section.empty}</p>`;
   const main = `  <section class="section journal-page">
     <div class="wrap narrow">
-      <h1>Le journal de Zackary</h1>
-      <p class="lead">Des petites histoires écrites par Zackary, au fil des saisons.</p>
-      <p class="center">Les cailles, les cochons d'Inde, et les moments de la fermette.</p>
+      <h1>${section.listTitle || section.journalName}</h1>
+      <p class="lead">${section.lead}</p>
+      <p class="center">${section.blurb}</p>
+      <p class="center"><a href="auteur.html">${section.authorLink}</a></p>
     </div>
     <div class="wrap">
 ${cards}
-      <p class="center journal-write"><a class="btn btn-ghost" href="../ecrire/">Zackary : écrire un article</a></p>
+      <p class="center journal-write"><a class="btn btn-ghost" href="../ecrire/">${section.write}</a></p>
     </div>
   </section>`;
   return page({
-    title: "Le journal de Zackary · Le Rythme des Saisons",
-    description: "Les articles de Zackary : des petites histoires de la fermette, au fil des saisons.",
-    canonicalPath: "/articles/",
+    title: section.pageTitle,
+    description: section.description,
+    canonicalPath: section.canonical,
     imagePath: null,
     main,
+    sectionId: section.id,
   });
 }
 

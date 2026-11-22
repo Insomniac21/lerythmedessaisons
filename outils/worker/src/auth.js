@@ -40,6 +40,26 @@ export async function passphraseMatches(passphrase, secrets) {
   return ok;
 }
 
+function usableSecret(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return trimmed.length >= 10 ? trimmed : "";
+}
+
+export async function matchRole(passphrase, env) {
+  const zackary = usableSecret(env?.AUTH_SECRET_ZACKARY);
+  const parent = usableSecret(env?.AUTH_SECRET_PARENT);
+  const given = await sha256(passphrase);
+  const parentDigest = await sha256(parent || passphrase);
+  const zackaryDigest = await sha256(zackary || passphrase);
+  const parentOk = Boolean(parent) && safeEqual(given, parentDigest);
+  const zackaryOk = Boolean(zackary) && safeEqual(given, zackaryDigest);
+  if (parentOk && zackaryOk && parent === zackary) return "parent";
+  if (parentOk && !zackaryOk) return "parent";
+  if (zackaryOk && !parentOk) return "zackary";
+  return null;
+}
+
 export function randomToken() {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -64,10 +84,11 @@ export async function clearFailures(kv, ip) {
   await kv.delete(`fail:${ip}`);
 }
 
-export async function createSession(kv) {
+export async function createSession(kv, role) {
   const token = randomToken();
-  await kv.put(`sess:${token}`, "ok", { expirationTtl: SESSION_TTL_SECONDS });
-  return { token, expiresIn: SESSION_TTL_SECONDS };
+  const stored = role === "parent" ? "parent" : "zackary";
+  await kv.put(`sess:${token}`, stored, { expirationTtl: SESSION_TTL_SECONDS });
+  return { token, expiresIn: SESSION_TTL_SECONDS, role: stored };
 }
 
 export async function readSession(kv, request) {
@@ -75,7 +96,8 @@ export async function readSession(kv, request) {
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!/^[0-9a-f]{64}$/.test(token)) return null;
   const found = await kv.get(`sess:${token}`);
-  return found ? token : null;
+  if (found !== "zackary" && found !== "parent") return null;
+  return { token, role: found };
 }
 
 export async function deleteSession(kv, token) {

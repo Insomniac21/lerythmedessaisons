@@ -14,6 +14,8 @@ const MESSAGES = {
   "photo-lire": "Je n'arrive pas à lire cette photo. Choisis un JPG ou un PNG.",
   "photo-lourde": "Cette photo est trop lourde. Essaie une autre.",
   introuvable: "Cet article n'est plus là.",
+  interdit: "Tu ne peux pas modifier cette section.",
+  section: "Choisis le journal ou le carnet.",
   "trop-vite": "Tu as beaucoup publié. Fais une pause et réessaie plus tard.",
   github: "L'article n'a pas pu être enregistré. Réessaie, ou demande à Papa.",
   reseau: "Ça n'a pas marché. Vérifie la connexion et réessaie.",
@@ -43,6 +45,9 @@ const boutonPublier = document.getElementById("publier");
 const liste = document.getElementById("mes-articles");
 const aucun = document.getElementById("aucun-article");
 const totalVues = document.getElementById("total-vues");
+const ouZackary = document.getElementById("ou-zackary");
+const ouPapa = document.getElementById("ou-papa");
+const titreListe = document.getElementById("titre-liste");
 const sortir = document.getElementById("sortir");
 const lienArticle = document.getElementById("lien-article");
 const succesTitre = document.getElementById("succes-titre");
@@ -52,6 +57,21 @@ let imageBase64 = null;
 let apercuUrl = null;
 let editingSlug = null;
 let photoDejaLa = false;
+let role = "zackary";
+let journalData = { articles: [], carnet: [] };
+let statsData = { ok: false, articles: {}, carnet: {} };
+
+function currentSection() {
+  if (role !== "parent") return "zackary";
+  const picked = document.querySelector('input[name="section"]:checked');
+  return picked && picked.value === "zackary" ? "zackary" : "carnet";
+}
+
+function showSectionChoice() {
+  if (ouZackary) ouZackary.hidden = role === "parent";
+  if (ouPapa) ouPapa.hidden = role !== "parent";
+  if (titreListe) titreListe.textContent = currentSection() === "carnet" ? "Mon carnet" : "Journal de Zackary";
+}
 
 function messageFor(error) {
   return MESSAGES[error?.code] || MESSAGES[error?.message] || MESSAGES.reseau;
@@ -124,6 +144,7 @@ function saveDraft() {
       body: texte.value,
       imageBase64,
       editingSlug,
+      section: currentSection(),
     }));
   } catch {
     // Le brouillon est un confort. S'il est trop gros, on continue sans.
@@ -164,6 +185,16 @@ function restoreDraft() {
     const draft = JSON.parse(raw);
     titre.value = draft.title || "";
     texte.value = draft.body || "";
+    if (role !== "parent" && draft.section === "carnet") {
+      clearDraft();
+      titre.value = "";
+      texte.value = "";
+      return;
+    }
+    if (role === "parent" && (draft.section === "carnet" || draft.section === "zackary")) {
+      const radio = document.querySelector(`input[name="section"][value="${draft.section}"]`);
+      if (radio) radio.checked = true;
+    }
     editingSlug = draft.editingSlug || null;
     if (draft.imageBase64) {
       imageBase64 = draft.imageBase64;
@@ -172,6 +203,7 @@ function restoreDraft() {
       enleverPhoto.hidden = false;
     }
     if (editingSlug) boutonPublier.textContent = "Enregistrer les corrections";
+    renderArticles(articlesForSection(), statsData);
   } catch {
     clearDraft();
   }
@@ -228,10 +260,16 @@ function phraseFenetre(days) {
   return `dans les ${n} derniers jours`;
 }
 
+function articlesForSection() {
+  const source = currentSection() === "carnet" ? journalData.carnet : journalData.articles;
+  return source || [];
+}
+
 function renderArticles(articles, stats) {
   liste.replaceChildren();
   aucun.hidden = articles.length > 0;
-  const available = Boolean(stats && stats.ok && stats.articles);
+  const available = Boolean(stats && stats.ok && (stats.articles || stats.carnet));
+  showSectionChoice();
   let total = 0;
   for (const article of articles) {
     const item = document.createElement("li");
@@ -246,7 +284,7 @@ function renderArticles(articles, stats) {
     edit.type = "button";
     edit.className = "btn btn-ghost btn-small";
     edit.textContent = "Corriger";
-    edit.addEventListener("click", () => correct(article.slug));
+    edit.addEventListener("click", () => correct(article));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "btn btn-quiet btn-small";
@@ -255,7 +293,8 @@ function renderArticles(articles, stats) {
     actions.append(edit, remove);
     item.append(strong, date);
     if (available) {
-      const views = Math.max(0, Math.round(Number(stats.articles[article.slug]?.views) || 0));
+      const bucket = article.section === "carnet" ? stats.carnet : stats.articles;
+      const views = Math.max(0, Math.round(Number(bucket?.[article.slug]?.views) || 0));
       total += views;
       const vues = document.createElement("p");
       vues.className = "editor-vues";
@@ -278,9 +317,12 @@ function renderArticles(articles, stats) {
 async function loadArticles() {
   const [data, stats] = await Promise.all([
     api("/api/journal"),
-    api("/api/stats").catch(() => ({ ok: false, articles: {} })),
+    api("/api/stats").catch(() => ({ ok: false, articles: {}, carnet: {} })),
   ]);
-  renderArticles(data.articles || [], stats);
+  role = data.role === "parent" ? "parent" : "zackary";
+  journalData = { articles: data.articles || [], carnet: data.carnet || [] };
+  statsData = stats;
+  renderArticles(articlesForSection(), statsData);
 }
 
 async function enterEditor() {
@@ -301,10 +343,11 @@ async function enterEditor() {
   titre.focus();
 }
 
-async function correct(slug) {
+async function correct(item) {
   hideMessage(messageEditeur);
   try {
-    const article = await api(`/api/article?slug=${encodeURIComponent(slug)}`);
+    const section = item.section === "carnet" ? "carnet" : "zackary";
+    const article = await api(`/api/article?slug=${encodeURIComponent(item.slug)}&section=${section}`);
     resetForm();
     editingSlug = article.slug;
     titre.value = article.title;
@@ -325,7 +368,10 @@ async function removeArticle(article) {
   if (!window.confirm(`Tu veux vraiment retirer « ${article.title} » ?`)) return;
   hideMessage(messageEditeur);
   try {
-    await api("/api/delete", { method: "POST", json: { slug: article.slug } });
+    await api("/api/delete", {
+      method: "POST",
+      json: { slug: article.slug, section: article.section === "carnet" ? "carnet" : "zackary" },
+    });
     if (editingSlug === article.slug) {
       resetForm();
       clearDraft();
@@ -393,7 +439,7 @@ formArticle.addEventListener("submit", async (event) => {
   boutonPublier.disabled = true;
   const previousLabel = boutonPublier.textContent;
   boutonPublier.textContent = "Je publie…";
-  const payload = { title: titre.value, body: texte.value };
+  const payload = { title: titre.value, body: texte.value, section: currentSection() };
   if (editingSlug) payload.slug = editingSlug;
   if (imageBase64) payload.imageBase64 = imageBase64;
   else if (retirerPhoto.checked) payload.removeImage = true;
@@ -402,7 +448,7 @@ formArticle.addEventListener("submit", async (event) => {
     clearDraft();
     resetForm();
     succesTitre.textContent = previousLabel.startsWith("Enregistrer") ? "C'est corrigé !" : "C'est publié !";
-    lienArticle.href = `../articles/${result.slug}.html`;
+    lienArticle.href = result.url ? `..${result.url}` : `../articles/${result.slug}.html`;
     show(panelSucces);
     await loadArticles().catch(() => {});
   } catch (error) {
@@ -436,6 +482,16 @@ encore.addEventListener("click", async () => {
     showMessage(messageEditeur, error);
   }
   titre.focus();
+});
+
+document.querySelectorAll('input[name="section"]').forEach((input) => {
+  input.addEventListener("change", () => {
+    if (editingSlug) {
+      resetForm();
+      clearDraft();
+    }
+    renderArticles(articlesForSection(), statsData);
+  });
 });
 
 const url = brokerUrl();

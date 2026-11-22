@@ -24,6 +24,9 @@ import {
   ARTICLE_VIEWS_QUERY,
   aggregateArticleStats,
   chooseWindow,
+  aggregateCarnetStats,
+  CARNET_VIEWS_QUERY,
+  sectionFromPath,
   slugFromArticlePath,
 } from "./worker/src/stats.js";
 
@@ -133,6 +136,7 @@ async function login(handle, env, ip = "203.0.113.8") {
   assert.equal(responseLogin.status, 200);
   const data = await responseLogin.json();
   assert.match(data.token, /^[0-9a-f]{64}$/);
+  assert.equal(data.role, "zackary");
   return data.token;
 }
 
@@ -212,6 +216,66 @@ test("les pages publiques ne demandent ni nom de famille, ni école, ni endroit"
     if (file !== writingPage) assert.doesNotMatch(html, /total-vues/, file);
     if (articlePages.has(file)) continue;
     assertBeaconOnce(html, file);
+  }
+});
+
+test("la page de l'auteur est liée, sans détail privé", () => {
+  function jpegSize(bytes) {
+    const data = Buffer.from(bytes);
+    let offset = 2;
+    while (offset + 9 < data.length) {
+      if (data[offset] !== 0xff) break;
+      const marker = data[offset + 1];
+      if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+        return { height: data.readUInt16BE(offset + 5), width: data.readUInt16BE(offset + 7) };
+      }
+      if (marker === 0xda || marker === 0xd9) break;
+      const length = data.readUInt16BE(offset + 2);
+      if (marker === 0xe1) {
+        const header = data.subarray(offset + 4, offset + 10).toString("latin1");
+        assert.equal(header.startsWith("Exif"), false);
+      }
+      offset += 2 + length;
+    }
+    throw new Error("jpeg");
+  }
+
+  const author = read("articles/auteur.html");
+  assert.match(author, /<title>L'auteur : Zackary · Le journal de Zackary<\/title>/);
+  assert.match(author, /<h1>L'auteur : Zackary<\/h1>/);
+  assert.match(author, /J'ai 10 ans/);
+  assert.doesNotMatch(author, /environ 10 ans/);
+  assert.match(author, /Marc-André/);
+  assert.match(author, /Quand ça me tente, j'aide papa avec les cailles/);
+  assert.match(author, /Le Rythme des Saisons est un projet familial\./);
+  assert.match(author, /Zackary met la main à la pâte quand le cœur lui en dit, et c'est lui qui raconte ses journées dans ce journal\. Je suis fier de lui\./);
+  assert.doesNotMatch(author, /projet de famille|papa et fils|côte à côte/);
+  assert.match(author, /— Marc-André/);
+  assert.match(author, /src="\.\.\/assets\/zackary-avatar\.jpg" width="400" height="400" alt="Avatar illustré de Zackary"/);
+  assert.equal(author.split('alt="Avatar illustré de Zackary"').length - 1, 1);
+  assert.doesNotMatch(author, /Saint-Jean|école|ecole|adresse|nom de famille/i);
+  assertBeaconOnce(author, "articles/auteur.html");
+
+  const avatar = readFileSync("assets/zackary-avatar.jpg");
+  assert.ok(avatar.length > 8000 && avatar.length < 150000);
+  assert.equal(avatar[0], 0xff);
+  assert.equal(avatar[1], 0xd8);
+  assert.deepEqual(jpegSize(avatar), { width: 400, height: 400 });
+
+  const byline = /<a href="auteur\.html"><img src="\.\.\/assets\/zackary-avatar\.jpg" alt="" width="40" height="40"><span>Écrit par Zackary<\/span><\/a>/;
+  assert.match(renderListPage([]), /href="auteur\.html">L'auteur : Zackary<\/a>/);
+  assert.match(read("articles/index.html"), /href="auteur\.html">L'auteur : Zackary<\/a>/);
+  assert.match(renderArticlePage({
+    slug: "2099-01-02-histoire-future",
+    title: "Histoire future",
+    body: "Une histoire qui n'existe pas encore.",
+    date: "2099-01-02",
+  }), byline);
+
+  const journal = JSON.parse(read("articles/journal.json"));
+  assert.ok(Array.isArray(journal.articles));
+  for (const entry of journal.articles) {
+    assert.match(read(`articles/${entry.slug}.html`), byline, entry.slug);
   }
 });
 
@@ -480,6 +544,11 @@ test("un chemin d'article devient un slug, le reste est ignoré", () => {
   assert.equal(slugFromArticlePath("/articles/index.html"), null);
   assert.equal(slugFromArticlePath("/articles/data/2026-11-21-bonjour.json"), null);
   assert.equal(slugFromArticlePath("/cailles/ron.html"), null);
+  assert.equal(slugFromArticlePath("/carnet/2026-11-21-bonjour.html"), null);
+  assert.deepEqual(sectionFromPath("/carnet/2026-11-21-bonjour.html"), { section: "carnet", slug: "2026-11-21-bonjour" });
+  assert.equal(sectionFromPath("/carnet/auteur.html"), null);
+  assert.equal(sectionFromPath("/carnet/index.html"), null);
+  assert.match(CARNET_VIEWS_QUERY, /requestPath_like: "\/carnet\/%"/);
   const now = new Date("2026-11-21T15:00:00Z");
   const wide = chooseWindow(now, 8035200);
   assert.equal(wide.windowDays, 90);
@@ -509,6 +578,11 @@ test("les vues restent derrière le mot secret et ne cassent pas la page", async
         },
       });
     }
+    if (body.query.includes("/carnet/")) {
+      return response(groupsPayload([
+        { count: 3, sum: { visits: 1 }, dimensions: { requestPath: "/carnet/2026-11-21-le-foin.html" } },
+      ]));
+    }
     assert.equal(body.query, ARTICLE_VIEWS_QUERY);
     return response(groupsPayload([
       { count: 4, sum: { visits: 3 }, dimensions: { requestPath: "/articles/2026-11-21-bonjour-script.html" } },
@@ -536,7 +610,7 @@ test("les vues restent derrière le mot secret et ne cassent pas la page", async
   const token = await login(handle, env);
   const absent = await handle(request("/api/stats", { token }), testEnv(kv));
   assert.equal(absent.status, 200);
-  assert.deepEqual(await absent.json(), { ok: false, windowDays: 90, articles: {} });
+  assert.deepEqual(await absent.json(), { ok: false, windowDays: 90, articles: {}, carnet: {} });
   assert.equal(calls.length, 0);
 
   const first = await handle(request("/api/stats", { token }), env);
@@ -549,6 +623,7 @@ test("les vues restent derrière le mot secret et ne cassent pas la page", async
     "2026-11-21-bonjour-script": { views: 6, visits: 4 },
     "2026-11-21-le-foin": { views: 3, visits: 2 },
   });
+  assert.deepEqual(stats.carnet, { "2026-11-21-le-foin": { views: 3, visits: 1 } });
   assert.deepEqual(aggregateArticleStats([
     { count: 4, sum: { visits: 3 }, dimensions: { requestPath: "/articles/2026-11-21-bonjour-script.html" } },
     { count: 2, sum: { visits: 1.2 }, dimensions: { requestPath: "/articles/2026-11-21-bonjour-script" } },
@@ -561,7 +636,7 @@ test("les vues restent derrière le mot secret et ne cassent pas la page", async
   assert.equal(viewsCall.body.variables.siteTag, "071761b46ae2499f935fa16a040565b2");
   assert.equal(viewsCall.body.variables.since, window.since.toISOString());
   assert.equal(viewsCall.body.variables.until, window.until.toISOString());
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
 
   calls.length = 0;
   const cached = await handle(request("/api/stats", { token }), env);
@@ -591,6 +666,7 @@ test("une fenêtre trop large retombe sur 30 jours, une erreur reste vide", asyn
         errors: [{ message: 'cannot request a time range wider than 13w2d, but your query time range spans 12w6d' }],
       });
     }
+    if (body.query.includes("/carnet/")) return response(groupsPayload([]));
     assert.equal(body.query, ARTICLE_VIEWS_QUERY);
     return response(groupsPayload([
       { count: 2, sum: { visits: 1 }, dimensions: { requestPath: "/articles/2026-11-21-bonjour.html" } },
@@ -624,9 +700,9 @@ test("une fenêtre trop large retombe sur 30 jours, une erreur reste vide", asyn
   const brokenToken = await login(broken, brokenEnv, "203.0.113.22");
   const first = await broken(request("/api/stats", { token: brokenToken }), brokenEnv);
   assert.equal(first.status, 200);
-  assert.deepEqual(await first.json(), { ok: false, windowDays: 90, articles: {} });
+  assert.deepEqual(await first.json(), { ok: false, windowDays: 90, articles: {}, carnet: {} });
   const second = await broken(request("/api/stats", { token: brokenToken }), brokenEnv);
-  assert.deepEqual(await second.json(), { ok: false, windowDays: 90, articles: {} });
+  assert.deepEqual(await second.json(), { ok: false, windowDays: 90, articles: {}, carnet: {} });
   assert.equal(attempts, 2);
 });
 
@@ -677,6 +753,11 @@ test("si les visites ne sont pas offertes, les vues restent là", async () => {
     if (body.query.includes("visits")) {
       return response({ errors: [{ message: 'unknown field "visits"' }] });
     }
+    if (body.query.includes("/carnet/")) {
+      return response(groupsPayload([
+        { count: 2, dimensions: { requestPath: "/carnet/2026-11-21-bonjour.html" } },
+      ]));
+    }
     assert.match(body.query, /requestPath_like: "\/articles\/%"/);
     return response(groupsPayload([
       { count: 4, dimensions: { requestPath: "/articles/2026-11-21-bonjour.html" } },
@@ -692,6 +773,125 @@ test("si les visites ne sont pas offertes, les vues restent là", async () => {
   const stats = await (await handle(request("/api/stats", { token }), env)).json();
   assert.equal(stats.ok, true);
   assert.deepEqual(stats.articles, { "2026-11-21-bonjour": { views: 4, visits: 0 } });
+  assert.deepEqual(stats.carnet, { "2026-11-21-bonjour": { views: 2, visits: 0 } });
   assert.ok(queries.some((query) => query.includes("visits")));
   assert.ok(queries.some((query) => !query.includes("visits") && !query.includes("RumSettings")));
+});
+
+test("le carnet de Marc-André est à part, et Zackary n'y touche pas", async () => {
+  const kv = createMemoryKv();
+  const github = createMemoryGitHub({ "articles/journal.json": '{"articles":[]}\n', "carnet/journal.json": '{"articles":[]}\n' });
+  const handle = createHandler({ github, now: () => new Date("2026-11-22T15:00:00Z") });
+  const env = testEnv(kv);
+  const parentLogin = await handle(request("/api/login", {
+    method: "POST",
+    json: { passphrase: "le mot de papa seulement" },
+    ip: "203.0.113.40",
+  }), env);
+  assert.equal(parentLogin.status, 200);
+  const parent = await parentLogin.json();
+  assert.equal(parent.role, "parent");
+
+  const mine = await handle(request("/api/publish", {
+    method: "POST",
+    token: parent.token,
+    json: { title: "Le foin du matin", body: "Les cailles ont pondu." },
+  }), env);
+  assert.equal(mine.status, 200);
+  const created = await mine.json();
+  assert.equal(created.section, "carnet");
+  assert.match(created.url, /^\/carnet\//);
+  const page = github.files.get(`carnet/${created.slug}.html`);
+  assert.match(page, /<a href="auteur\.html"><img src="\.\.\/assets\/marc-andre-avatar\.jpg" alt="" width="40" height="40"><span>Écrit par Marc-André<\/span><\/a>/);
+  assert.match(page, /Le carnet du fermier/);
+  assert.doesNotMatch(page, /Saint-Jean|école|ecole|adresse|nom de famille/i);
+  assertBeaconOnce(page, "carnet publié");
+  assert.match(github.files.get("carnet/index.html"), /L'auteur : Marc-André/);
+  assert.equal(github.files.has(`articles/${created.slug}.html`), false);
+
+  const zackary = await login(handle, env, "203.0.113.41");
+  const blocked = await handle(request("/api/publish", {
+    method: "POST",
+    token: zackary,
+    json: { title: "Pas ici", body: "Non.", section: "carnet" },
+  }), env);
+  assert.equal(blocked.status, 403);
+  const journal = await handle(request("/api/journal", { token: zackary }), env);
+  const listed = await journal.json();
+  assert.equal(listed.role, "zackary");
+  assert.deepEqual(listed.carnet, []);
+  assert.equal(listed.articles.some((item) => item.slug === created.slug), false);
+
+  const removed = await handle(request("/api/delete", {
+    method: "POST",
+    token: zackary,
+    json: { slug: created.slug, section: "carnet" },
+  }), env);
+  assert.equal(removed.status, 403);
+  assert.equal(github.files.has(`carnet/${created.slug}.html`), true);
+
+  const forSon = await handle(request("/api/publish", {
+    method: "POST",
+    token: parent.token,
+    json: { title: "Une note pour Zackary", body: "Papa a réparé la cage.", section: "zackary" },
+  }), env);
+  assert.equal(forSon.status, 200);
+  const son = await forSon.json();
+  assert.equal(son.section, "zackary");
+  assert.match(github.files.get(`articles/${son.slug}.html`), /Écrit par Zackary/);
+
+  const parentList = await handle(request("/api/journal", { token: parent.token }), env);
+  const both = await parentList.json();
+  assert.equal(both.role, "parent");
+  assert.equal(both.section, "carnet");
+  assert.equal(both.carnet.length, 1);
+  assert.equal(both.articles.length, 1);
+
+  const parentReadsSon = await handle(request(`/api/article?slug=${son.slug}`, { token: parent.token }), env);
+  assert.equal(parentReadsSon.status, 200);
+  assert.equal((await parentReadsSon.json()).section, "zackary");
+  const parentRemovesSon = await handle(request("/api/delete", {
+    method: "POST",
+    token: parent.token,
+    json: { slug: son.slug },
+  }), env);
+  assert.equal(parentRemovesSon.status, 200);
+  assert.equal(github.files.has(`articles/${son.slug}.html`), false);
+  assert.match(github.files.get("carnet/index.html"), /Le foin du matin/);
+
+  assert.equal(read("carnet/index.html"), renderListPage([], "carnet"));
+  assert.match(read("carnet/index.html"), /Le carnet du fermier/);
+  assert.match(read("carnet/auteur.html"), /<h1>L'auteur : Marc-André<\/h1>/);
+  assert.match(read("carnet/auteur.html"), /alt="Avatar illustré de Marc-André"/);
+  assert.match(read("carnet/auteur.html"), /Le Rythme des Saisons, c'est ma fermette/);
+  assert.match(read("carnet/auteur.html"), /Le Rythme des Saisons est un projet familial\./);
+  assert.match(read("carnet/auteur.html"), /quand le cœur lui en dit/);
+  assert.doesNotMatch(read("carnet/auteur.html"), /projet de famille|papa et fils|côte à côte|avec lui, à la fermette/);
+  assert.doesNotMatch(read("carnet/auteur.html"), /Saint-Jean|école|ecole|adresse|nom de famille/i);
+  assertBeaconOnce(read("carnet/auteur.html"), "carnet/auteur.html");
+  const sample = renderArticlePage({
+    slug: "2099-03-01-note-future",
+    title: "Note future",
+    body: "Une note qui n'existe pas encore.",
+    date: "2099-03-01",
+  }, "carnet");
+  assert.match(sample, /Écrit par Marc-André/);
+  assert.match(sample, /href="\.\.\/carnet\/index\.html">Le carnet<\/a>|href="index\.html" aria-current="page">Le carnet<\/a>/);
+  assertBeaconOnce(sample, "modèle du carnet");
+  for (const file of ["index.html", "cailles/index.html", "cailles/mathilda.html", "cailles/jannie.html", "cailles/ron.html", "ecrire/index.html", "articles/index.html", "articles/auteur.html", "carnet/index.html", "carnet/auteur.html"]) {
+    assert.match(read(file), /Le carnet<\/a>/, file);
+  }
+  assert.doesNotThrow(() => assertWritable("carnet/2026-11-22-bonjour.html"));
+  assert.doesNotThrow(() => assertWritable("carnet/journal.json"));
+  assert.doesNotThrow(() => assertWritable("assets/carnet/2026-11-22-bonjour.jpg"));
+  assert.throws(() => assertWritable("carnet/auteur.html"), /chemin/);
+  assert.throws(() => assertWritable("assets/marc-andre-avatar.jpg"), /chemin/);
+  assert.deepEqual(aggregateCarnetStats([
+    { count: 2, sum: { visits: 1 }, dimensions: { requestPath: "/carnet/2026-11-22-le-foin.html" } },
+    { count: 9, sum: { visits: 4 }, dimensions: { requestPath: "/articles/2026-11-22-le-foin.html" } },
+  ]), { "2026-11-22-le-foin": { views: 2, visits: 1 } });
+  const editor = read("ecrire/index.html");
+  assert.match(editor, /Mon carnet/);
+  assert.match(editor, /Journal de Zackary/);
+  assert.match(read("ecrire/editeur.js"), /section: currentSection\(\)/);
 });

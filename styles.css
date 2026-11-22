@@ -107,10 +107,15 @@ h3{font-size:1.65rem}
 .section-journal{background:#fffdf7;border-top:1px solid #eadfc4;border-bottom:1px solid #eadfc4}
 .journal-page h1,.journal-body,.journal-card-title{overflow-wrap:break-word}
 .journal-byline{font-family:var(--serif);font-style:italic;font-size:1.3rem;text-align:center;color:var(--sage-d);margin:0 0 1.4rem}
+.journal-byline a{display:inline-flex;align-items:center;gap:.45rem;color:var(--rust-d);text-decoration:none}
+.journal-byline a span{text-decoration:underline;text-underline-offset:.16em}
+.journal-byline img{width:2.4rem;height:2.4rem;border-radius:50%;object-fit:cover;flex:none;border:1px solid #eadfc4;background:#fff}
 .journal-body{font-size:1.125rem}
 .journal-body p{margin:0 0 1rem}
 .journal-photo{margin:0 auto 1.4rem}
 .journal-photo img{width:100%;border-radius:18px;border:1px solid #eadfc4;box-shadow:0 4px 18px rgba(80,60,20,.08);background:#fffdf7}
+.author-portrait{width:12.5rem;margin:0 auto 1.25rem}
+.author-portrait img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:50%;border:1px solid #eadfc4;box-shadow:0 4px 18px rgba(80,60,20,.08);background:#fff}
 .journal-cards .card-body{text-align:center}
 .journal-cards .card img{aspect-ratio:16/9;object-fit:cover}
 .journal-card-title{font-size:1.65rem;text-align:center}
@@ -135,6 +140,8 @@ label.btn{cursor:pointer}
 .check-line{display:flex;align-items:center;gap:.55rem;font-weight:700;margin-top:.4rem}
 .check-line input{width:1.2rem;height:1.2rem}
 .editor-sous-titre{font-size:clamp(1.7rem,3.4vw,2.15rem);margin-top:2.2rem}
+.editor-choix{border:0;margin:0 0 1rem;padding:0}
+.editor-choix legend{font-weight:700;padding:0;margin:0 0 .35rem}
 .editor-row{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.7rem}
 .editor-vues{margin:.2rem 0 0;font-weight:700;color:var(--sage-d)}
 .editor-total{text-align:center;font-family:var(--serif);font-size:1.35rem;color:var(--sage-d);margin:0 0 1rem}

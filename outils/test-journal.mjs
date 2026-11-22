@@ -247,8 +247,9 @@ test("la page de l'auteur est liée, sans détail privé", () => {
   assert.doesNotMatch(author, /environ 10 ans/);
   assert.match(author, /Marc-André/);
   assert.match(author, /Quand ça me tente, j'aide papa avec les cailles/);
+  assert.match(author, /Le Rythme des Saisons est un projet familial\./);
   assert.match(author, /Zackary met la main à la pâte quand le cœur lui en dit, et c'est lui qui raconte ses journées dans ce journal\. Je suis fier de lui\./);
-  assert.doesNotMatch(author, /projet de famille|côte à côte/);
+  assert.doesNotMatch(author, /projet de famille|papa et fils|côte à côte/);
   assert.match(author, /— Marc-André/);
   assert.match(author, /src="\.\.\/assets\/zackary-avatar\.jpg" width="400" height="400" alt="Avatar illustré de Zackary"/);
   assert.equal(author.split('alt="Avatar illustré de Zackary"').length - 1, 1);
@@ -863,8 +864,9 @@ test("le carnet de Marc-André est à part, et Zackary n'y touche pas", async ()
   assert.match(read("carnet/auteur.html"), /<h1>L'auteur : Marc-André<\/h1>/);
   assert.match(read("carnet/auteur.html"), /alt="Avatar illustré de Marc-André"/);
   assert.match(read("carnet/auteur.html"), /Le Rythme des Saisons, c'est ma fermette/);
+  assert.match(read("carnet/auteur.html"), /Le Rythme des Saisons est un projet familial\./);
   assert.match(read("carnet/auteur.html"), /quand le cœur lui en dit/);
-  assert.doesNotMatch(read("carnet/auteur.html"), /projet de famille|côte à côte|avec lui, à la fermette/);
+  assert.doesNotMatch(read("carnet/auteur.html"), /projet de famille|papa et fils|côte à côte|avec lui, à la fermette/);
   assert.doesNotMatch(read("carnet/auteur.html"), /Saint-Jean|école|ecole|adresse|nom de famille/i);
   assertBeaconOnce(read("carnet/auteur.html"), "carnet/auteur.html");
   const sample = renderArticlePage({

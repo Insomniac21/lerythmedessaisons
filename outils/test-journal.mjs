@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import {
   ARTICLE_SLUG,
@@ -28,9 +29,41 @@ import {
 
 const ORIGIN = "https://lerythmedessaisons.ca";
 const SECRET = "les cailles de zackary";
+const BEACON = `<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "6b90ef3797f9465cb8a06733ff3b28a1"}'></script>`;
 
 function read(path) {
   return readFileSync(path, "utf8");
+}
+
+function htmlFiles(dir) {
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...htmlFiles(path));
+    else if (entry.name.endsWith(".html")) found.push(path);
+  }
+  return found;
+}
+
+function beaconCount(html) {
+  return html.split(BEACON).length - 1;
+}
+
+function withoutBeacon(html) {
+  return html.replaceAll(`${BEACON}\n`, "").replaceAll(BEACON, "");
+}
+
+function assertBeaconOnce(html, label = "page") {
+  assert.equal(beaconCount(html), 1, label);
+  const escaped = BEACON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.match(html, new RegExp(`${escaped}\\n</body>`), label);
+}
+
+function assertBeaconOptional(html, label = "page") {
+  const count = beaconCount(html);
+  assert.ok(count <= 1, label);
+  if (count === 1) assertBeaconOnce(html, label);
 }
 
 function response(data, status = 200) {
@@ -141,21 +174,45 @@ test("les pages publiques ne demandent ni nom de famille, ni école, ni endroit"
       image: null,
     },
   ]);
-  for (const html of [article, list]) {
+  const journal = JSON.parse(read("articles/journal.json"));
+  for (const html of [article, list, renderListPage([])]) {
     assert.match(html, /lang="fr-CA"/);
     assert.match(html, /name="viewport"/);
     assert.match(html, /Le journal/);
     assert.doesNotMatch(html, /Saint-Jean|école|ecole|adresse|nom de famille/i);
     assert.doesNotMatch(html, /\/api\/stats|👀|editor-vues|total-vues/);
-  }
-  for (const html of [read("index.html"), read("articles/index.html"), read("articles/2026-11-21-les-cailles-partie-1.html"), read("articles/2026-11-21-les-cailles-partie-2.html"), read("articles/2026-11-21-la-premiere-portee-des-cailles.html")]) {
-    assert.doesNotMatch(html, /\/api\/stats|👀|editor-vues|total-vues/);
+    assertBeaconOnce(html);
   }
   assert.doesNotMatch(read("ecrire/generer.js"), /\/api\/stats|👀|total-vues|editor-vues/);
   assert.match(article, /Écrit par Zackary/);
   assert.match(article, /src="\.\.\/assets\/articles\/2026-11-21-les-cailles\.jpg"/);
   assert.ok(list.indexOf("Plus tard") < list.indexOf("Plus tôt"));
+  assert.equal(read("articles/index.html"), renderListPage(journal.articles));
   assert.match(renderListPage([]), /Pas encore d'histoire ici/);
+  const articlePages = new Set(journal.articles.map((entry) => join("articles", `${entry.slug}.html`)));
+  const writingPage = join("ecrire", "index.html");
+  for (const entry of journal.articles) {
+    const data = JSON.parse(read(`articles/data/${entry.slug}.json`));
+    const file = read(`articles/${entry.slug}.html`);
+    const rendered = renderArticlePage({ ...entry, ...data, slug: entry.slug });
+    // Le Worker actuel réécrit l'article sans le snippet tant qu'il n'est pas redéployé.
+    // Le reste de la page doit quand même coller au modèle, sans snippet en double.
+    assert.equal(withoutBeacon(file), withoutBeacon(rendered), entry.slug);
+    assert.equal(withoutBeacon(withoutBeacon(rendered)), withoutBeacon(rendered), entry.slug);
+    assert.doesNotMatch(file, /\/api\/stats|👀|editor-vues|total-vues/, entry.slug);
+    assert.doesNotMatch(rendered, /\/api\/stats|👀|editor-vues|total-vues/, entry.slug);
+    assertBeaconOptional(file, entry.slug);
+    assertBeaconOptional(withoutBeacon(file), `${entry.slug} sans snippet`);
+  }
+  const pages = htmlFiles(".");
+  assert.ok(pages.length >= 10);
+  for (const file of pages) {
+    const html = read(file);
+    assert.doesNotMatch(html, /\/api\/stats|👀|editor-vues/, file);
+    if (file !== writingPage) assert.doesNotMatch(html, /total-vues/, file);
+    if (articlePages.has(file)) continue;
+    assertBeaconOnce(html, file);
+  }
 });
 
 test("la page d'accueil, le menu et le coin d'écriture sont branchés", () => {
@@ -305,6 +362,8 @@ test("publier, corriger et retirer un article", async () => {
   assert.doesNotMatch(page, /<script>alert|<img src=x/);
   assert.doesNotMatch(new TextDecoder().decode(image), /GPSLatitude|45\.1234/);
   assert.match(page, /name="viewport"/);
+  assertBeaconOnce(page, "article publié");
+  assertBeaconOnce(index, "journal publié");
 
   const edited = await handle(request("/api/publish", {
     method: "POST",

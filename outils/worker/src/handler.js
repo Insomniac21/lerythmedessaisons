@@ -14,6 +14,7 @@ import {
 } from "./auth.js";
 import { createGitHubClient } from "./github.js";
 import { deleteArticle, listArticles, publishArticle, readArticle } from "./publier.js";
+import { loadArticleStats } from "./stats.js";
 import { validatePublish, validateSlug } from "./valider.js";
 
 const BODY_MAX = 2_500_000;
@@ -130,6 +131,11 @@ export function createHandler(options = {}) {
       if (url.pathname === "/api/logout" && request.method === "POST") {
         await deleteSession(env.SESSIONS, session);
         return json(200, { ok: true }, origin);
+      }
+
+      if (url.pathname === "/api/stats" && request.method === "GET") {
+        const stats = await loadArticleStats(env, { fetchImpl: options.fetchImpl, now });
+        return json(200, stats, origin);
       }
 
       const github = githubFor(env);

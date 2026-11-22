@@ -1,3 +1,12 @@
 {
-  "articles": []
+  "articles": [
+    {
+      "slug": "2026-11-22-test-carnet",
+      "title": "Test carnet",
+      "date": "2026-11-22",
+      "publishedAt": "2026-11-22T14:17:34.088Z",
+      "excerpt": "Test de publication, retiré tout de suite.",
+      "image": null
+    }
+  ]
 }
